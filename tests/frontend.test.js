@@ -28,7 +28,7 @@ function harness(storage = new Map()) {
   vm.createContext(sandbox);
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1].replace('boot().catch(showError);', '');
   vm.runInContext(script, sandbox);
-  const api = vm.runInContext('({UI, CAT, GameEngine, PlatformAdapter, gameApi, loadLevel, render, flagCellError, clearCellFeedback, showWin, showPracticeWin, closeModal, finishLevel, continueAfterCompletion, move, markCell, saveLocalRun, restoreLocalRun, draftKey, PuzzleSolver, singleTap, initialize, loadSessionLevel, startClock, updateClock, handleVisibility})', sandbox);
+  const api = vm.runInContext('({UI, CAT, GameEngine, PlatformAdapter, gameApi, loadLevel, render, flagCellError, clearCellFeedback, showWin, showPracticeWin, closeModal, finishLevel, continueAfterCompletion, move, markCell, saveLocalRun, restoreLocalRun, draftKey, PuzzleSolver, singleTap, initialize, loadSessionLevel, startClock, updateClock, handleVisibility, flushLocalRun})', sandbox);
   return { ...api, node, timers, storage, intervals, document:sandbox.document, advance:ms=>now+=ms };
 }
 const snapshot = () => ({ level: { id: 1, size: 4, regions: [1,0,0,2,1,0,2,2,1,3,2,2,1,3,2,2] }, marks: Array(16).fill(0), hearts: 3, elapsedMs: 0, status: 'playing' });
@@ -400,4 +400,107 @@ test('an account switch cannot overwrite the destination account draft with the 
   assert.equal(storage.get('findcat:local-run:24:normal'),savedB);
   h.UI.account={id:24};h.PlatformAdapter.request=async()=>({level:snapshot().level,run:runs.b});
   await h.loadLevel();assert.equal(h.UI.engine.marks[4],2);assert.equal(h.UI.engine.marks[2],0);assert.equal(h.UI.engine.hearts,2);
+});
+
+function persistedDraft(runId='mixed-run', overrides={}) {
+  const marks=Array(16).fill(0);marks[2]=2;marks[3]=1;marks[4]=1;
+  return {version:1,runId,levelId:1,size:4,revision:0,regions:snapshot().level.regions.join(','),marks,hearts:3,...overrides};
+}
+function draftStorage(mode,draft) {return new Map([[`findcat:local-run:31:${mode}`,JSON.stringify(draft)]]);}
+async function loadStoredDraft(storage,mode,run) {
+  const h=harness(storage);h.UI.account={id:31,isAdmin:true};h.UI.engine=new h.GameEngine(h.render);
+  h.requests=[];h.PlatformAdapter.request=async(url,options)=>{h.requests.push([url,options?.body]);return {level:snapshot().level,run,totalLevels:3};};
+  await h.loadLevel(false,{mode,levelId:1});return h;
+}
+const mixedRun = overrides=>({id:'mixed-run',cats:[4],hearts:2,status:'playing',elapsedMs:2000,revision:1,...overrides});
+
+test('mixed old/new revision refresh merges crosses only in normal and practice with server cats/hearts first',async()=>{
+  for(const mode of ['normal','practice']) {
+    const original=persistedDraft(),storage=draftStorage(mode,original);
+    let h=await loadStoredDraft(storage,mode,mixedRun());
+    assert.equal(h.UI.engine.marks[2],0,'old local cat must not reappear');
+    assert.equal(h.UI.engine.marks[3],1,'manual cross survives revision mismatch');
+    assert.equal(h.UI.engine.marks[4],2,'server cat wins over manual cross');
+    assert.equal(h.UI.engine.hearts,2,'old hearts must not overwrite server');assert.equal(h.UI.engine.status,'playing');
+    const backupKey=`findcat:local-run:31:${mode}:conflict`,backup=JSON.parse(storage.get(backupKey));
+    assert.deepEqual(backup.draft,{...original,conflict:false});assert.equal(backup.reason,'server-revision-changed');
+    const primary=JSON.parse(storage.get(`findcat:local-run:31:${mode}`));assert.equal(primary.revision,1);assert.equal(primary.marks[3],1);
+    h=await loadStoredDraft(storage,mode,mixedRun());assert.equal(h.UI.engine.marks[3],1);assert.equal(h.UI.engine.marks[4],2);assert.equal(h.UI.engine.hearts,2);
+    assert.equal(h.requests.length,1);assert.ok(!h.requests[0][0].endsWith('/move'));
+    assert.deepEqual(JSON.parse(storage.get(backupKey)),backup,'ordinary refresh never overwrites original backup');
+  }
+});
+
+test('revision conflict never revives a failed/lower-heart draft and lock survives refresh, sync and mode switch',async()=>{
+  for(const mode of ['normal','practice'])for(const hearts of [0,1]) {
+    const storage=draftStorage(mode,persistedDraft('mixed-run',{hearts}));
+    let h=await loadStoredDraft(storage,mode,mixedRun({hearts:3}));
+    assert.equal(h.UI.engine.status,'conflict');assert.equal(h.UI.engine.hearts,3,'keep server value without granting playable hearts');
+    assert.equal(h.node('hearts').textContent,'待同步');assert.equal(h.UI.engine.marks[2],0);assert.equal(h.UI.engine.marks[3],1);
+    const before=Array.from(h.UI.engine.marks);await h.move(11,'place');h.markCell(5,1);await h.finishLevel();
+    assert.deepEqual(Array.from(h.UI.engine.marks),before);assert.equal(h.requests.length,1,'conflict cannot submit or move');
+    await h.loadLevel();assert.equal(h.UI.engine.status,'conflict','same-run sync cannot revive');
+    h=await loadStoredDraft(storage,mode,mixedRun({hearts:3}));assert.equal(h.UI.engine.status,'conflict','new JS session must remain locked');
+    assert.equal(h.UI.engine.marks[3],1);
+    h.PlatformAdapter.request=async()=>({level:snapshot().level,run:mixedRun({id:'explicit-restart',revision:0,hearts:3,cats:[]})});
+    await h.loadLevel(true,{mode,levelId:1});assert.equal(h.UI.engine.status,'playing');assert.equal(h.UI.engine.marks[3],0);assert.equal(h.UI.engine.run.id,'explicit-restart');
+  }
+});
+
+test('local ready versus partial server locks without auto-submit; server failed/completed always win over conflict',async()=>{
+  for(const mode of ['normal','practice']){
+    const marks=Array(16).fill(0);for(const c of [2,4,11,13])marks[c]=2;marks[3]=1;
+    const storage=draftStorage(mode,persistedDraft('mixed-run',{marks,hearts:2}));
+    let h=await loadStoredDraft(storage,mode,mixedRun({hearts:2}));
+    assert.equal(h.UI.engine.status,'conflict');assert.equal(h.requests.length,1);assert.equal(h.UI.engine.marks[3],1);
+    h=await loadStoredDraft(storage,mode,mixedRun({status:'failed',hearts:0}));
+    assert.equal(h.UI.engine.status,'failed');assert.equal(h.UI.engine.hearts,0);assert.equal(h.requests.length,1);
+    assert.equal(h.UI.engine.marks[3],1);
+    // A completed practice run has a server receipt; do not let the stale conflict mask it or resubmit it.
+    if(mode==='practice'){
+      storage.set(`findcat:local-run:31:${mode}`,JSON.stringify(persistedDraft('mixed-run',{conflict:true,hearts:3})));
+      h=await loadStoredDraft(storage,mode,mixedRun({status:'completed',cats:[2,4,11,13],hearts:2}));
+      assert.equal(h.UI.engine.status,'completed');assert.equal(h.UI.engine.marks[3],1);assert.equal(h.requests.length,1);
+    }
+  }
+});
+
+test('revision-cross salvage never mixes different run, board size, map, account or mode',async()=>{
+  for(const overrides of [{runId:'other-run'},{size:5},{regions:Array(16).fill(0).join(',')},{levelId:2}]){
+    const storage=draftStorage('normal',persistedDraft('mixed-run',overrides));
+    const h=await loadStoredDraft(storage,'normal',mixedRun());assert.equal(h.UI.engine.marks[3],0);assert.equal(h.UI.engine.marks[4],2);
+  }
+  const storage=draftStorage('normal',persistedDraft());
+  let h=await loadStoredDraft(storage,'practice',mixedRun());assert.equal(h.UI.engine.marks[3],0);
+  h=harness(storage);h.UI.account={id:32,isAdmin:true};h.UI.engine=new h.GameEngine(h.render);
+  h.PlatformAdapter.request=async()=>({level:snapshot().level,run:mixedRun()});await h.loadLevel();assert.equal(h.UI.engine.marks[3],0);
+});
+
+test('conflict backups are single bounded slots; backup quota errors preserve primary and use memory fallback',async()=>{
+  const original=persistedDraft(),storage=draftStorage('normal',original);
+  let h=harness(storage);h.UI.account={id:31};h.UI.engine=new h.GameEngine(h.render);
+  const normalSet=h.PlatformAdapter.setStorage;h.PlatformAdapter.setStorage=(key,value)=>key.endsWith(':conflict')?false:normalSet(key,value);
+  h.PlatformAdapter.request=async()=>({level:snapshot().level,run:mixedRun()});
+  await h.loadLevel();h.flushLocalRun();h.document.hidden=true;h.handleVisibility();
+  assert.deepEqual(JSON.parse(storage.get('findcat:local-run:31:normal')),original,'failed backup must not destroy persisted original');
+  assert.ok(h.UI.drafts.get('local-run:31:normal:conflict'));assert.equal(h.UI.engine.marks[3],1);
+  // Storage errors do not break ordinary local play in the loaded board.
+  await h.move(11,'place');assert.equal(h.UI.engine.marks[11],2);
+  const saved=h.UI.drafts.get('local-run:31:normal:conflict');
+  await h.loadLevel();assert.deepEqual(h.UI.drafts.get('local-run:31:normal:conflict'),saved);
+  h=await loadStoredDraft(draftStorage('normal',original),'normal',mixedRun());
+  for(let revision=2;revision<8;revision++){
+    h.PlatformAdapter.request=async()=>({level:snapshot().level,run:mixedRun({revision})});await h.loadLevel();h.flushLocalRun();
+  }
+  const keys=[...h.storage.keys()].filter(k=>k.endsWith(':conflict'));assert.equal(keys.length,1);assert.ok(h.storage.get(keys[0]).length<16384);
+});
+
+test('visibility/pagehide flush is idempotent and skips partially loading boards without adding requests',async()=>{
+  const storage=draftStorage('normal',persistedDraft());const h=await loadStoredDraft(storage,'normal',mixedRun());
+  const backup=storage.get('findcat:local-run:31:normal:conflict');
+  h.UI.engine.applyMark(5,1);h.document.hidden=true;h.handleVisibility();assert.equal(JSON.parse(storage.get('findcat:local-run:31:normal')).marks[5],1);
+  h.flushLocalRun();assert.equal(storage.get('findcat:local-run:31:normal:conflict'),backup);assert.equal(h.requests.length,1);
+  const before=storage.get('findcat:local-run:31:normal');h.UI.loading=true;h.UI.engine.marks[6]=1;h.flushLocalRun();h.handleVisibility();
+  assert.equal(storage.get('findcat:local-run:31:normal'),before);
+  assert.match(html,/window\.addEventListener\('pagehide',flushLocalRun\)/);
 });

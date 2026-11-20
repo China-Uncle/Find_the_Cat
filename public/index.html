@@ -154,10 +154,18 @@ class GameEngine {
     this.onChange(this.snapshot());return {correct:true,cell,status:this.status,hearts:this.hearts};
   }
   // Validate persisted local drafts rather than trusting arbitrary browser JSON.
+  validLocalDraft(draft){
+    return !!draft&&Array.isArray(draft.marks)&&draft.marks.length===this.marks.length&&
+      draft.marks.every((v,i)=>[0,1,2].includes(v)&&(v!==2||this.solution.has(i)))&&
+      Number.isInteger(draft.hearts)&&draft.hearts>=0&&draft.hearts<=3;
+  }
+  restoreCrosses(draft){
+    if(!this.validLocalDraft(draft))return false;
+    draft.marks.forEach((v,i)=>{if(v===1&&this.marks[i]!==2)this.marks[i]=1});
+    this.onChange(this.snapshot());return true;
+  }
   restoreLocal(draft){
-    if(!draft||!['playing','ready'].includes(this.status)||!Array.isArray(draft.marks)||draft.marks.length!==this.marks.length||
-      !draft.marks.every((v,i)=>[0,1,2].includes(v)&&(v!==2||this.solution.has(i)))||
-      !Number.isInteger(draft.hearts)||draft.hearts<0||draft.hearts>3)return false;
+    if(!['playing','ready'].includes(this.status)||!this.validLocalDraft(draft))return false;
     this.marks=[...draft.marks];this.hearts=Math.min(this.hearts,draft.hearts);
     this.status=!this.hearts?'failed':this.marks.filter(v=>v===2).length===this.level.size?'ready':'playing';
     this.onChange(this.snapshot());return true;
@@ -166,7 +174,7 @@ class GameEngine {
 // Single platform boundary for HTTP, auth bearer, and persistence (swap with wx APIs for Mini Program).
 const PlatformAdapter={
   getStorage(key){try{return localStorage.getItem('findcat:'+key)}catch{return null}},
-  setStorage(key,value){try{localStorage.setItem('findcat:'+key,value)}catch{}},
+  setStorage(key,value){try{localStorage.setItem('findcat:'+key,value);return true}catch{return false}},
   removeStorage(key){try{localStorage.removeItem('findcat:'+key)}catch{}},
   async request(url,{method='GET',body,headers={}}={}){const token=this.getStorage('token');const res=await fetch(url,{method,headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});let data={};try{data=await res.json()}catch{}if(!res.ok){if(res.status===401){this.removeStorage('token');this.removeStorage('user')}const error=new Error(data.error||`HTTP ${res.status}`);error.status=res.status;error.code=data.code;throw error}return data;}
 };
@@ -185,6 +193,12 @@ function renderCompletionActions(state) {
   const button=$('restart');
   button.textContent='重新开始';
   button.onclick=()=>loadLevel(true).catch(showError);
+  if(state.status==='conflict') {
+    button.textContent='重开冲突局';
+    $('hearts').textContent='待同步';$('hearts').setAttribute('aria-label','草稿与服务器状态冲突，本局已锁定');
+    $('subrow').textContent='已保留叉号；猫或红心状态冲突，本局已锁定，请明确重开。';
+    return;
+  }
   if(state.status==='ready') {
     button.textContent='重试结算';
     button.onclick=()=>finishLevel().catch(showError);
@@ -279,16 +293,46 @@ function readStoredJson(key){
 }
 function saveLocalRun(){
   const e=UI.engine;if(!e?.run||!e.level||(UI.runAccountId!==undefined&&UI.runAccountId!==UI.account?.id))return;
-  const draft={version:1,runId:e.run.id,levelId:e.level.id,size:e.level.size,revision:e.revision??0,regions:e.level.regions.join(','),marks:[...e.marks],hearts:e.hearts};
+  const draft={version:1,runId:e.run.id,levelId:e.level.id,size:e.level.size,revision:e.revision??0,regions:e.level.regions.join(','),marks:[...e.marks],hearts:e.hearts,conflict:e.status==='conflict'};
   const key=draftKey();UI.drafts.set(key,draft);
-  if(UI.account?.id)PlatformAdapter.setStorage(key,JSON.stringify(draft));
+  // If a conflict backup could not be stored, retain the original persisted draft.
+  if(UI.account?.id&&!(UI.draftWriteBlock?.key===key&&UI.draftWriteBlock.runId===e.run.id))PlatformAdapter.setStorage(key,JSON.stringify(draft));
+}
+function backupLocalDraft(draft,reason){
+  const key=draftKey(),backupKey=key+':conflict';
+  // Only compact, known draft fields are copied; browser JSON is not trusted storage.
+  if(!draft||!Array.isArray(draft.marks)||draft.marks.length>121||
+    typeof draft.runId!=='string'||draft.runId.length>64||typeof draft.regions!=='string'||draft.regions.length>1024)return;
+  const previous=UI.drafts.get(backupKey)||(UI.account?.id?readStoredJson(backupKey):null);
+  const old=previous?.draft;
+  // Do not replace the original conflict with its later merged/locked projection or a restart.
+  if(previous&&(reason!=='server-revision-changed'||(old?.runId===draft.runId&&old.revision===draft.revision&&old.regions===draft.regions)))return;
+  const saved={version:draft.version,runId:draft.runId,levelId:draft.levelId,size:draft.size,
+    revision:draft.revision,regions:draft.regions,marks:[...draft.marks],hearts:draft.hearts,conflict:!!draft.conflict};
+  const backup={reason,draft:saved},json=JSON.stringify(backup);
+  if(json.length>16384)return;
+  // At most one last conflict backup per account/mode, with an in-memory fallback.
+  const stored=!UI.account?.id||PlatformAdapter.setStorage(backupKey,json)!==false;
+  UI.drafts.set(backupKey,backup);
+  if(!stored)UI.draftWriteBlock={key,runId:UI.engine.run.id};
 }
 function restoreLocalRun(){
   const e=UI.engine,key=draftKey(),draft=UI.drafts.get(key)||(UI.account?.id?readStoredJson(key):null);
-  // A legacy client's newer server revision wins over this browser's old local marks.
-  if(draft?.version===1&&draft.runId===e.run.id&&draft.levelId===e.level.id&&
-    draft.size===e.level.size&&draft.revision===(e.revision??0)&&draft.regions===e.level.regions.join(','))e.restoreLocal(draft);
+  if(!draft)return;
+  const sameBoard=draft.version===1&&draft.runId===e.run.id&&draft.levelId===e.level.id&&
+    draft.size===e.level.size&&draft.regions===e.level.regions.join(',');
+  if(!sameBoard||!Number.isSafeInteger(draft.revision)||draft.revision<0||!e.validLocalDraft(draft)){backupLocalDraft(draft,'different-or-invalid-board');return}
+  if(draft.revision===(e.revision??0)&&!draft.conflict){e.restoreLocal(draft);return}
+  if(!draft.conflict)backupLocalDraft(draft,'server-revision-changed');
+  // Revision conflicts may salvage manual crosses only. Never replay stale cats/hearts/status.
+  const playable=['playing','ready'].includes(e.status);
+  const wasReady=draft.marks.filter(v=>v===2).length===e.level.size;
+  const needsConfirmation=playable&&(draft.conflict||draft.hearts<e.hearts||(wasReady&&e.status!=='ready'));
+  if(needsConfirmation)e.status='conflict';
+  e.restoreCrosses(draft);
+  if(needsConfirmation)toast('已保留叉号；猫或红心状态有冲突，本局已锁定，请明确重开。');
 }
+function flushLocalRun(){if(!UI.loading)saveLocalRun()}
 async function loadSessionLevel(){
   const session=UI.account?.id?readStoredJson(`active-mode:${UI.account.id}`):null;
   const practice=UI.account?.isAdmin&&session?.mode==='practice'&&Number.isSafeInteger(session.levelId)&&session.levelId>0;
@@ -427,7 +471,7 @@ async function initialize(){
 function showLogin(){$('title').textContent='找猫';$('board').innerHTML='<div class="empty">登录后开始第一关</div>';hearts(0);$('progressText').textContent='0/0';$('progressFill').style.width='0';$('timer').textContent='00:00';$('subrow').textContent='猫猫已经准备好啦';}
 function pointerCell(e){const board=$('board'),rect=board.getBoundingClientRect(),style=getComputedStyle(board),pad=parseFloat(style.paddingLeft),gap=parseFloat(style.columnGap),inner=rect.width-2*pad,x=e.clientX-rect.left-pad,y=e.clientY-rect.top-pad,size=(inner-gap*(UI.size-1))/UI.size,c=Math.floor(x/(size+gap)),r=Math.floor(y/(size+gap));if(r<0||c<0||r>=UI.size||c>=UI.size||x%(size+gap)>size||y%(size+gap)>size)return -1;return r*UI.size+c}
 async function singleTap(cell){const mark=UI.engine.marks[cell];if(mark===2)return;markCell(cell,mark===1?0:1)}
-function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('modeBtn').onclick=showMode;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false,{mode:UI.mode,levelId:Number(b.dataset.open)}).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(UI.loading||cell<0||UI.engine?.status!=='playing')return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)markCell(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)markCell(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',handleVisibility);}
+function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('modeBtn').onclick=showMode;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false,{mode:UI.mode,levelId:Number(b.dataset.open)}).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(UI.loading||cell<0||UI.engine?.status!=='playing')return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)markCell(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)markCell(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',handleVisibility);window.addEventListener('pagehide',flushLocalRun);}
 // Display follows server wall time, including hidden-tab time; the server owns scoring.
 function updateClock(){
   if(UI.engine?.run&&UI.engine.status==='playing'){
@@ -440,6 +484,7 @@ function startClock(){
   if(!document.hidden&&UI.engine?.run&&UI.engine.status==='playing')UI.timerHandle=setInterval(updateClock,250);
 }
 function handleVisibility(){
+  if(document.hidden)flushLocalRun();
   updateClock();
   if(document.hidden){clearInterval(UI.timerHandle);UI.timerHandle=null}else startClock();
 }
