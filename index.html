@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FAF8F5">
+<title>找猫 · 每只猫都有自己的小天地</title>
+<style>
+:root{color-scheme:light;--paper:#faf8f5;--ink:#4a403a;--muted:#91877f;--green:#40725e;--line:#e8e1d7;--mint:#e5eee3;--shadow:0 12px 40px #5346350b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:ui-rounded,"SF Pro Rounded","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6;background-image:radial-gradient(#998f7920 .7px,transparent .7px);background-size:16px 16px}button,select{font:inherit;color:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{cursor:default;opacity:.42}button:focus-visible,summary:focus-visible{outline:3px solid #537c68;outline-offset:4px}button{border:0}svg{display:block}header{max-width:1110px;margin:auto;padding:28px 32px 20px;display:flex;justify-content:space-between;align-items:center}.brand{display:flex;gap:12px;align-items:center}.brand-icon{width:48px;height:48px;background:#e8eeda;border:1px solid #d8dfcd;border-radius:16px;display:grid;place-items:center;transform:rotate(-7deg)}.brand-icon svg{width:36px}.brand h1{font-size:23px;letter-spacing:3px;line-height:1.3;margin:0}.brand small{display:block;font-size:10px;letter-spacing:2px;color:var(--muted);margin-top:3px}.header-tools{display:flex;gap:10px}.icon-button{width:40px;height:40px;display:grid;place-items:center;background:#fff9;border:1px solid var(--line);border-radius:13px}.icon-button svg{width:19px;height:19px}.icon-button[aria-pressed="true"]{background:var(--mint)}
+.shell{max-width:1110px;margin:10px auto 0;padding:0 32px 28px;display:grid;grid-template-columns:minmax(0,630px) 295px;gap:44px;justify-content:center;align-items:start}.eyebrow{color:var(--green);font-size:11px;font-weight:700;letter-spacing:2px;display:flex;align-items:center;gap:7px}.eyebrow:before{content:"";width:6px;height:6px;border-radius:50%;background:#83a07c}.intro{margin-bottom:23px}.intro h2{font-size:30px;letter-spacing:1px;margin:7px 0 5px;font-weight:750}.intro p{color:var(--muted);margin:0;font-size:13px}.difficulty{display:flex;padding:5px;background:#ece8e08c;border:1px solid #e9e3da;border-radius:15px;gap:4px;margin-bottom:18px}.difficulty button{flex:1;background:transparent;border-radius:10px;padding:9px 4px;white-space:nowrap;color:#8d8278;font-size:12px;transition:background .2s,box-shadow .2s}.difficulty button b{font-size:14px;color:var(--ink);margin-right:5px}.difficulty button[aria-pressed="true"]{background:#fffdfa;box-shadow:0 2px 6px #53463512;color:var(--green)}.game-card{background:#fffdfa;border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:var(--shadow)}.game-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:17px}.game-top .level-name{font-weight:700;font-size:14px}.verified{font-size:10px;border:1px solid #dce7d7;border-radius:20px;background:#f0f5ec;color:#66815e;padding:3px 8px;margin-left:6px;white-space:nowrap}.stats{display:flex;gap:17px;align-items:center;font-variant-numeric:tabular-nums}.stat{display:flex;align-items:center;gap:6px;font-size:13px}.stat svg{width:16px;height:16px;opacity:.65}.stat.cat-count{color:var(--green);font-weight:700}.board-shell{position:relative}.board{display:grid;aspect-ratio:1;border:2.5px solid var(--ink);border-radius:12px;overflow:hidden;background:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;isolation:isolate}.cell{position:relative;display:grid;place-items:center;background:var(--region-color);padding:0;min-width:0;min-height:0;border:0;border-right:1px solid #4a403a22;border-bottom:1px solid #4a403a22;transition:filter .12s;cursor:pointer;aspect-ratio:1;outline-offset:-4px!important}.cell.edge-right{border-right:2.5px solid var(--ink)}.cell.edge-bottom{border-bottom:2.5px solid var(--ink)}.cell.last-col{border-right:0}.cell.last-row{border-bottom:0}.cell:hover{filter:brightness(1.035)}.region-number{position:absolute;top:2px;left:5px;font-size:9px;font-weight:700;opacity:.43;line-height:1.3;pointer-events:none}.mark{width:20%;height:20%;position:relative;opacity:.5;pointer-events:none}.mark:before,.mark:after{content:"";position:absolute;left:46%;top:0;width:2px;height:100%;background:var(--ink);border-radius:3px;transform:rotate(45deg)}.mark:after{transform:rotate(-45deg)}.mark.automatic{opacity:.21;width:17%;height:17%}.cat-face{width:78%;height:78%;max-width:54px;overflow:visible;pointer-events:none;filter:drop-shadow(0 2px 0 #4a403a16)}.cat-pop{animation:cat-pop .38s cubic-bezier(.3,1.8,.6,1)}@keyframes cat-pop{0%{transform:scale(.25) rotate(-12deg)}65%{transform:scale(1.12) rotate(5deg)}100%{transform:scale(1) rotate(0)}}.cell:after{position:absolute;content:"";inset:0;pointer-events:none}.cell.conflict-zone:after{background:#ce53552b}.cell.conflict-cat:after{box-shadow:inset 0 0 0 3px #c34c4c;border-radius:5px;animation:warning 1.2s ease-in-out infinite}.cell.hint-target:after{box-shadow:inset 0 0 0 3px #397f63;animation:hint 1.4s ease-in-out infinite}.cell.hint-source:after{background:#fff5}.cell.hint-source.hint-target:after{box-shadow:inset 0 0 0 3px #397f63}.cell.conflict-cat .cat-face{filter:drop-shadow(0 0 4px #ce5355)}@keyframes warning{50%{background:#e7786a44}}@keyframes hint{50%{background:#ffffff5c}}.loading{position:absolute;inset:0;border-radius:12px;background:#faf8f5ed;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:4;backdrop-filter:blur(4px)}[hidden]{display:none!important}.spinner{width:30px;height:30px;border:3px solid #d9e3d2;border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.board-caption{display:flex;align-items:center;justify-content:space-between;color:#a3978b;font-size:10px;margin:11px 0 0}.board-caption .little-dot{display:inline-block;width:5px;height:5px;background:#9caf89;border-radius:50%;margin-right:4px}.actions{display:grid;grid-template-columns:1fr 1fr 1fr 1.22fr;gap:9px;margin-top:17px}.action{padding:10px 5px;background:#fffdfa;border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;transition:transform .15s,background .15s}.action svg{width:16px;height:16px}.action:hover:not(:disabled){background:#f0ece5;transform:translateY(-1px)}.action.hint-button{background:#edf1e5;border-color:#dde4d1;color:#647548}.notice{display:flex;align-items:center;gap:8px;min-height:55px;padding:12px 14px;margin-top:13px;background:#eeeee587;border:1px solid #e3e5d6;border-radius:12px;font-size:12px;color:#7c7d68}.notice .notice-icon{flex:none;font-size:16px}.notice p{margin:0;flex:1}.notice[data-type="error"]{background:#fff0ec;border-color:#ecd2c8;color:#a25445}.apply-hint{flex:none;background:#dce8d8;border:1px solid #c5d8bf;padding:5px 8px;border-radius:8px;font-size:11px;color:#3f694c}.new-level{width:100%;padding:13px 20px;margin-top:15px;border-radius:13px;background:var(--green);color:#fffef6;font-weight:650;display:flex;justify-content:center;align-items:center;gap:9px;box-shadow:0 5px 10px #40725e12;transition:background .2s,transform .2s}.new-level:hover:not(:disabled){background:#345f4d;transform:translateY(-1px)}.new-level svg{width:17px;height:17px}.under-note{text-align:center;color:#a79d91;font-size:10px;letter-spacing:.5px;margin:14px 0 0}
+.sidebar{margin-top:11px}.illustration{position:relative;height:158px;display:grid;place-items:center}.illustration>svg{width:190px;height:145px;overflow:visible}.floating-note{position:absolute;right:0;top:7px;transform:rotate(8deg);font-size:11px;color:#9e9982;letter-spacing:1px}.side-card{background:#fffdf9c9;border:1px solid var(--line);border-radius:19px;padding:21px;margin-bottom:17px;box-shadow:0 5px 18px #53463504}.side-card h3{font-size:14px;margin:0 0 15px;display:flex;gap:8px;align-items:center}.side-card h3 svg{width:17px;height:17px}.rules{padding:0;margin:0;list-style:none;display:grid;gap:15px}.rule{display:flex;gap:12px;align-items:center}.rule-icon{width:35px;height:35px;border-radius:10px;flex:none;display:grid;place-items:center;background:#edf0e4;color:#73805b}.rule-icon svg{width:24px;height:24px}.rule:nth-child(2) .rule-icon{background:#e8eef3;color:#688ca5}.rule:nth-child(3) .rule-icon{background:#f6e8e2;color:#ad8774}.rule:nth-child(4) .rule-icon{background:#eee6f4;color:#9476ab}.rule b{display:block;font-size:12px;font-weight:650}.rule small{font-size:10px;color:var(--muted)}.settings-title{font-size:11px;letter-spacing:1px;color:var(--muted);margin-bottom:14px}.setting-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.setting-row b{font-size:12px}.setting-row small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.switch{border:0;border-radius:20px;background:#d9d5ca;width:35px;height:21px;padding:3px;flex:none}.switch:after{content:"";display:block;background:#fffdf6;width:15px;height:15px;border-radius:50%;box-shadow:0 1px 3px #0002;transition:transform .2s}.switch[aria-checked="true"]{background:#6b906e}.switch[aria-checked="true"]:after{transform:translateX(14px)}.mode{margin-top:16px;display:flex;gap:4px;background:#f0ece5;border-radius:9px;padding:4px}.mode button{flex:1;padding:6px 2px;border-radius:6px;font-size:10px;background:transparent;color:#8d8278}.mode button[aria-pressed="true"]{background:#fffdfa;box-shadow:0 1px 3px #0001;color:var(--green)}.gesture-list{font-size:11px;color:#978b7d;line-height:1.9;margin:13px 0 0}.gesture-list b{font-weight:600;color:#7c7064}.help-details{margin-top:13px;color:#938a7e;font-size:10px}.help-details summary{cursor:pointer;font-size:11px}.help-details p{margin:8px 0 0}.side-footer{text-align:center;color:#aba091;font-size:10px;padding:2px 14px;line-height:2}.side-footer span{display:block;font-size:17px;margin-bottom:4px;color:#b7bea3}.page-footer{max-width:1045px;margin:0 auto;padding:16px 10px 23px;border-top:1px solid #e9e3d8;display:flex;justify-content:space-between;color:#b1a798;font-size:10px;letter-spacing:1px}
+dialog{border:1px solid var(--line);border-radius:24px;padding:30px;background:#fffdf8;color:var(--ink);box-shadow:0 30px 100px #423c3c26;max-width:min(390px,90vw);text-align:center}dialog::backdrop{background:#51473f55;backdrop-filter:blur(4px)}dialog h2{font-size:24px;margin:10px 0}dialog p{font-size:13px;color:var(--muted)}.win-cat{width:100px;height:100px;margin:0 auto}.win-cat svg{width:100%;height:100%}.win-time{font-size:33px;font-variant-numeric:tabular-nums;color:var(--green);font-weight:750;letter-spacing:3px}.dialog-actions{display:flex;gap:8px;margin-top:20px;justify-content:center}.dialog-actions button{padding:10px 18px;border:1px solid var(--line);border-radius:11px;background:#f0ece5}.dialog-actions .primary{background:var(--green);color:#fff;border-color:var(--green)}#confetti{position:fixed;inset:0;pointer-events:none;z-index:10}.mobile-help{display:none}
+@media(min-width:1200px){.shell{gap:53px;margin-top:18px}.intro{margin-top:7px}}
+@media(max-width:850px){header{padding:20px 23px}.shell{gap:24px;padding:0 23px 25px;grid-template-columns:minmax(0,560px) 240px}.game-card{padding:16px}.sidebar .side-card{padding:16px}.intro h2{font-size:25px}.verified{display:none}.stats{gap:11px}.page-footer{margin:0 23px}.floating-note{display:none}}
+@media(max-width:700px){header{padding:17px 20px 14px}.brand-icon{width:40px;height:40px;border-radius:13px}.brand h1{font-size:21px}.brand small{font-size:8px}.icon-button{width:36px;height:36px}.shell{display:flex;flex-direction:column;gap:21px;max-width:570px;padding:0 16px 20px;margin-top:5px}.play-area{width:100%}.intro{margin:6px 4px 16px}.intro h2{font-size:25px;margin-top:6px}.intro p{font-size:11px}.eyebrow{font-size:9px}.difficulty{margin-bottom:13px}.difficulty button{font-size:10px;padding:8px 3px}.difficulty button b{font-size:13px;margin-right:3px}.game-card{border-radius:18px;padding:13px}.game-top{margin-bottom:12px}.game-top .level-name{font-size:12px}.verified{display:inline;font-size:8px;margin-left:3px;padding:2px 5px}.stats{gap:10px}.stat{font-size:11px;gap:4px}.stat svg{width:14px;height:14px}.board{border-radius:9px}.board-caption{font-size:9px;margin-top:9px}.actions{gap:7px;margin-top:13px}.action{font-size:11px;padding:10px 3px}.notice{font-size:11px;margin-top:11px;min-height:52px;padding:10px}.sidebar{margin:0;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}.illustration,.side-footer{display:none}.sidebar .side-card{padding:14px;margin:0;border-radius:15px}.side-card h3{font-size:12px;margin-bottom:12px}.rules{gap:10px}.rule{gap:8px}.rule-icon{width:26px;height:26px;border-radius:7px}.rule-icon svg{width:18px;height:18px}.rule b{font-size:10px}.rule small{font-size:9px}.setting-row b{font-size:11px}.setting-row small{font-size:9px}.gesture-list{font-size:10px}.settings-title{font-size:10px;margin-bottom:10px}.mode{margin-top:12px}.mode button{font-size:9px}.page-footer{margin:0 20px;font-size:8px;letter-spacing:.2px}.new-level{padding:12px}.under-note{font-size:9px;margin-top:10px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<!-- Inline vector artwork: no fonts, images, audio files or remote resources. -->
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><defs>
+<symbol id="cat-art" viewBox="0 0 64 64"><path d="M10 29 8 9q0-4 4-2l14 9q6-2 12 0l14-9q4-2 4 2l-2 20q4 6 3 13c-1 13-12 17-25 17S8 55 7 42q-1-7 3-13Z" fill="#fff2d8" stroke="#544336" stroke-width="2.5" stroke-linejoin="round"/><path d="m13 14 1 13 8-7M51 14l-1 13-8-7" fill="#edb9a3"/><path d="m29 17 1 7m6-7-1 7" stroke="#dab28b" stroke-width="3" stroke-linecap="round"/><path d="M20 34v5m24-5v5" stroke="#544336" stroke-width="3.5" stroke-linecap="round"/><ellipse cx="16" cy="43" rx="5" ry="3" fill="#efb4a3" opacity=".7"/><ellipse cx="48" cy="43" rx="5" ry="3" fill="#efb4a3" opacity=".7"/><path d="m29 41 3 3 3-3Z" fill="#b9816c"/><path d="M32 44v3m-6-1q2 5 6 1 4 4 6-1" fill="none" stroke="#544336" stroke-width="1.8" stroke-linecap="round"/><path d="M5 39l7 2m-7 5 7-1m47-6-7 2m7 5-7-1" stroke="#544336" stroke-width="1.5" stroke-linecap="round"/></symbol>
+<symbol id="i-sound" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4ZM15 8q5 4 0 8m3-11q8 7 0 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+<symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4Zm5 4 5 6m0-6-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3v.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 9v5l3 2M9 2h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="m8 5-5 5 5 5M3 10h10a6 6 0 0 1 0 12" transform="translate(0 -2)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-redo" viewBox="0 0 24 24"><path d="m16 5 5 5-5 5m5-5H11a6 6 0 0 0 0 12" transform="translate(0 -2)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-hint" viewBox="0 0 24 24"><path d="M8 15a7 7 0 1 1 8 0l-1 3H9Zm1 6h6m-3-17v2m-7 4h2m10 0h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 10a8 8 0 0 0-14-5L3 8m0-5v5h5M4 14a8 8 0 0 0 14 5l3-3m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-row" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 9h18M3 15h18M9 4v16m6-16v16" stroke="currentColor" stroke-width="1" opacity=".4"/><path d="M4 12h16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></symbol>
+<symbol id="i-col" viewBox="0 0 24 24"><use href="#i-row" transform="rotate(90 12 12)"/></symbol>
+<symbol id="i-region" viewBox="0 0 24 24"><path d="M4 4h10v6h6v10H4Z" fill="currentColor" opacity=".2"/><path d="M4 4h10v6h6v10H4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="10" cy="14" r="2" fill="currentColor"/></symbol>
+<symbol id="i-near" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2"/><path d="M9 9h6v6H9Z" fill="currentColor" opacity=".5"/></symbol>
+</defs></svg>
+<header>
+  <div class="brand"><div class="brand-icon"><svg aria-hidden="true"><use href="#cat-art"/></svg></div><div><h1>找猫</h1><small>FIND THE CAT</small></div></div>
+  <div class="header-tools"><button id="sound" class="icon-button" aria-label="开启音效" aria-pressed="false" title="开启 / 关闭音效"><svg aria-hidden="true"><use href="#i-mute"/></svg></button><button id="help" class="icon-button" aria-label="查看玩法与快捷键" title="玩法与快捷键"><svg aria-hidden="true"><use href="#i-help"/></svg></button></div>
+</header>
+<main class="shell">
+<section class="play-area" aria-label="找猫游戏">
+  <div class="intro"><div class="eyebrow">A LITTLE PAUSE, A LITTLE PUZZLE</div><h2>嘘，猫猫藏在这里。</h2><p>一点观察，一点推理，给每只猫找到自己的小天地。</p></div>
+  <nav class="difficulty" aria-label="选择棋盘难度"><button data-size="5" aria-pressed="true"><b>5 × 5</b>入门</button><button data-size="6" aria-pressed="false"><b>6 × 6</b>简单</button><button data-size="7" aria-pressed="false"><b>7 × 7</b>进阶</button><button data-size="8" aria-pressed="false"><b>8 × 8</b>困难</button></nav>
+  <div class="game-card">
+    <div class="game-top"><div><span class="level-name" id="level-name">猫猫的小花园</span><span class="verified" id="verified" title="MRV 精确校验 + 逻辑规则回放">✓ 唯一解</span></div><div class="stats"><span class="stat"><svg aria-hidden="true"><use href="#i-clock"/></svg><span id="timer" aria-label="用时">00:00</span></span><span class="stat cat-count" id="counter" aria-label="已找到猫数量">🐱 0 / 5</span></div></div>
+    <div class="board-shell"><div class="board" id="board" role="grid" aria-label="找猫棋盘" aria-busy="true"></div><div class="loading" id="loading" role="status"><div class="spinner"></div><span id="loading-text">猫猫正在寻找藏身处…</span></div></div>
+    <div class="board-caption"><span><i class="little-dot"></i>每行、每列、每色块，各一只猫</span><span id="level-meta">随机生成 · 逻辑可解</span></div>
+  </div>
+  <div class="actions"><button class="action" id="undo" disabled title="撤销 Ctrl / ⌘ Z"><svg aria-hidden="true"><use href="#i-undo"/></svg>撤销</button><button class="action" id="redo" disabled title="重做 Ctrl / ⌘ Shift Z"><svg aria-hidden="true"><use href="#i-redo"/></svg>重做</button><button class="action" id="clear"><svg aria-hidden="true"><use href="#i-clear"/></svg>清空</button><button class="action hint-button" id="hint"><svg aria-hidden="true"><use href="#i-hint"/></svg>给点提示</button></div>
+  <div class="notice" id="notice" role="status" aria-live="polite"><span class="notice-icon" aria-hidden="true">✧</span><p id="message">先从小小的色块看起，也许猫猫就在那里。</p><button class="apply-hint" id="apply-hint" hidden>应用提示</button></div>
+  <button class="new-level" id="new"><svg aria-hidden="true"><use href="#i-refresh"/></svg><span>再找一群猫 · 新关卡</span></button>
+  <p class="under-note">不着急，猫猫会一直等你。<span aria-hidden="true"> ♡</span></p>
+</section>
+<aside class="sidebar">
+  <div class="illustration" aria-hidden="true"><span class="floating-note">a cozy little puzzle</span><svg viewBox="0 0 200 155"><ellipse cx="103" cy="136" rx="73" ry="9" fill="#e8e7d9"/><path d="M29 112q-15-20-12-32 9 1 15 20m-3 22q-4-28 8-36 6 10-3 27" fill="#b2c3a0"/><path d="M22 112h22l-4 25H26Z" fill="#e5bea4"/><path d="M144 119q25 0 28-17c3-14-11-18-13-7-1 5 6 8 8 3" fill="none" stroke="#c4b697" stroke-width="8" stroke-linecap="round"/><ellipse cx="106" cy="115" rx="41" ry="24" fill="#ddd4b8"/><use href="#cat-art" x="66" y="35" width="88" height="88" transform="rotate(-8 110 80)"/><path d="M80 130q8-9 16 0m15 0q8-9 16 0" fill="none" stroke="#b7aa88" stroke-width="3" stroke-linecap="round"/><path d="m56 37 4-5m-10 17-6-1m112-12 4 5" stroke="#cabd98" stroke-width="2" stroke-linecap="round"/><path d="m163 65 2-6 3 6 6 2-6 3-3 6-2-6-6-3Z" fill="#d7c18f"/></svg></div>
+  <section class="side-card" id="rules" tabindex="-1"><h3><svg aria-hidden="true"><use href="#i-help"/></svg>猫猫的四个小约定</h3><ol class="rules"><li class="rule"><span class="rule-icon"><svg aria-hidden="true"><use href="#i-row"/></svg></span><div><b>每一行，只住一只</b><small>横着看，不多也不少</small></div></li><li class="rule"><span class="rule-icon"><svg aria-hidden="true"><use href="#i-col"/></svg></span><div><b>每一列，只住一只</b><small>竖着看，也是一样哦</small></div></li><li class="rule"><span class="rule-icon"><svg aria-hidden="true"><use href="#i-region"/></svg></span><div><b>每个色块，一只猫</b><small>颜色相同，就是同一个家</small></div></li><li class="rule"><span class="rule-icon"><svg aria-hidden="true"><use href="#i-near"/></svg></span><div><b>猫猫之间，不贴贴</b><small>上下左右、斜角都不相邻</small></div></li></ol></section>
+  <section class="side-card"><div class="settings-title">让找猫更顺手</div><div class="setting-row"><div><b>自动排除</b><small>放下猫，自动标记不可用位置</small></div><button id="auto" class="switch" role="switch" aria-checked="true" aria-label="自动排除"></button></div><div class="mode" role="group" aria-label="点按模式"><button data-mode="cycle" aria-pressed="true">三态点按</button><button data-mode="cat" aria-pressed="false">直接放猫</button></div><p class="gesture-list"><b>点按</b>　空白 → × → 猫 → 空白<br><b>拖动</b>　连续标 ×，从手动 × 起拖则擦除<br><b>右键</b>　快速标 × / 取消</p><details class="help-details" id="help-details"><summary>快捷键与贴心说明</summary><p>方向键移动，Enter / 空格点按；X 标记，C 放猫。Ctrl / ⌘ Z 撤销，Shift Z 或 Ctrl Y 重做。拖动算一步操作。浅色 × 是自动标记，撤猫后会按其他猫的影响重新计算。自动 × 可直接点按放猫。</p><p>提示先检查冲突，再使用唯一候选或共同排除规则；不会把隐藏答案当成推理。尺寸表示棋盘大小，并非严格的人类解题难度评级。离开标签页时暂停计时。</p></details></section>
+  <div class="side-footer"><span>✿</span>没有倒计时，没有压力。<br>只有你，和几只等着被发现的猫。</div>
+</aside>
+</main>
+<footer class="page-footer"><span>FIND THE CAT · 领地猫猫</span><span>每一关，都是新的一点小欢喜。</span></footer>
+<canvas id="confetti" aria-hidden="true" hidden></canvas>
+<dialog id="win-dialog" aria-labelledby="win-title"><div class="win-cat"><svg aria-hidden="true"><use href="#cat-art"/></svg></div><h2 id="win-title">猫猫，全都找到啦！</h2><p>每只猫都有了自己的小天地。做得真棒。</p><div class="win-time" id="win-time">00:00</div><p id="win-detail"></p><div class="dialog-actions"><button id="win-close">欣赏一下</button><button id="win-next" class="primary">再来一关 ↗</button></div></dialog>
+<dialog id="clear-dialog" aria-labelledby="clear-title"><h2 id="clear-title">让猫猫重新藏好？</h2><p>清空所有手动标记与猫。此操作可以撤销，计时不会重置。</p><div class="dialog-actions"><button id="clear-cancel">先不了</button><button id="clear-confirm" class="primary">清空棋盘</button></div></dialog>
+<!-- MODULE 1: pure algorithms. Can be moved unchanged to solver.js (also runs in a Worker / Node). -->
+<script id="engine">
+'use strict';
+class Random {
+  constructor(seed) { this.state = (seed >>> 0) || 0x9e3779b9; }
+  next() { let x = this.state; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.state = x >>> 0; return this.state / 4294967296; }
+  int(n) { return Math.floor(this.next() * n); }
+  shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = this.int(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+}
+class Rules {
+  static conflicts(a, b, n, map) {
+    const ar = Math.floor(a / n), br = Math.floor(b / n), ac = a % n, bc = b % n;
+    return ar === br || ac === bc || map[a] === map[b] || (Math.abs(ar - br) <= 1 && Math.abs(ac - bc) <= 1);
+  }
+  static neighbors(i, n) {
+    const a = []; if (i >= n) a.push(i - n); if (i < n * (n - 1)) a.push(i + n);
+    if (i % n) a.push(i - 1); if (i % n < n - 1) a.push(i + 1); return a;
+  }
+  static groups(n, map) {
+    const groups = [];
+    for (let kind = 0; kind < 3; kind++) for (let g = 0; g < n; g++) {
+      const ids = []; for (let i = 0; i < n * n; i++) if ((kind === 0 ? Math.floor(i / n) : kind === 1 ? i % n : map[i]) === g) ids.push(i);
+      groups.push({ ids, label: kind === 0 ? `第 ${g + 1} 行` : kind === 1 ? `第 ${g + 1} 列` : `色块 ${g + 1}` });
+    }
+    return groups;
+  }
+  static conflictInfo(n, map, cats) {
+    const bad = new Set(), zones = new Set();
+    for (let a = 0; a < cats.length; a++) for (let b = a + 1; b < cats.length; b++) {
+      const x = cats[a], y = cats[b]; if (!this.conflicts(x, y, n, map)) continue;
+      bad.add(x); bad.add(y);
+      for (let i = 0; i < n * n; i++) {
+        if ((Math.floor(x / n) === Math.floor(y / n) && Math.floor(i / n) === Math.floor(x / n)) ||
+            (x % n === y % n && i % n === x % n) || (map[x] === map[y] && map[i] === map[x])) zones.add(i);
+      }
+      // For diagonal-only conflicts, show the local neighborhood instead of an unrelated whole row.
+      if (Math.abs(Math.floor(x / n) - Math.floor(y / n)) <= 1 && Math.abs(x % n - y % n) <= 1) { zones.add(x); zones.add(y); }
+    }
+    return { bad, zones };
+  }
+}
+class Solver {
+  constructor(n, map) {
+    if (!Number.isInteger(n) || n < 1 || n > 12 || map.length !== n * n || Array.from(map).some(g => !Number.isInteger(g) || g < 0 || g >= n)) throw new Error('无效的棋盘');
+    this.n = n; this.map = map;
+  }
+  // Exact MRV over THREE constraint families: rows, regions and columns. No time cutoff can masquerade as uniqueness.
+  solve({ limit = 2, fixed = [], banned = [] } = {}) {
+    if (!Number.isInteger(limit) || limit < 1) throw new Error('limit 必须为正整数');
+    const { n, map } = this, full = (1 << n) - 1, rowC = new Int8Array(n).fill(-1), ban = new Uint8Array(n * n);
+    for (const id of banned) { if (id < 0 || id >= n * n) throw new Error('无效的排除位置'); ban[id] = 1; }
+    let usedR = 0, usedC = 0, usedG = 0, count = 0, nodes = 0, solution = null;
+    for (const id of fixed) {
+      if (!Number.isInteger(id) || id < 0 || id >= n * n || ban[id]) return { count: 0, nodes: 0, solution: null };
+      const r = Math.floor(id / n), c = id % n, g = map[id];
+      if ((usedR & (1 << r)) || (usedC & (1 << c)) || (usedG & (1 << g)) ||
+          (r > 0 && rowC[r - 1] >= 0 && Math.abs(rowC[r - 1] - c) <= 1) ||
+          (r + 1 < n && rowC[r + 1] >= 0 && Math.abs(rowC[r + 1] - c) <= 1)) return { count: 0, nodes: 0, solution: null };
+      rowC[r] = c; usedR |= 1 << r; usedC |= 1 << c; usedG |= 1 << g;
+    }
+    // Depth-local buffers avoid candidate array churn and preserve a parent's MRV candidates on return.
+    const masks = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const regionCounts = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const colCounts = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const dfs = (ur, uc, ug, depth) => {
+      nodes++;
+      if (ur === full) { count++; if (!solution) solution = Array.from(rowC, (c, r) => r * n + c); return count >= limit; }
+      const rc = masks[depth], gc = regionCounts[depth], cc = colCounts[depth]; gc.fill(0); cc.fill(0);
+      let min = Infinity, kind = 0, group = -1;
+      for (let r = 0; r < n; r++) {
+        rc[r] = 0; if (ur & (1 << r)) continue;
+        let available = full & ~uc;
+        // Only adjacent rows can violate the 8-neighbor rule; columns already exclude all vertical neighbors.
+        for (const nr of [r - 1, r + 1]) if (nr >= 0 && nr < n && rowC[nr] >= 0) {
+          const b = 1 << rowC[nr]; available &= ~(b | (b << 1) | (b >>> 1));
+        }
+        let num = 0;
+        while (available) {
+          const bit = available & -available; available -= bit; const c = 31 - Math.clz32(bit), id = r * n + c, g = map[id];
+          if ((ug & (1 << g)) || ban[id]) continue;
+          rc[r] |= bit; num++; gc[g]++; cc[c]++;
+        }
+        if (!num) return false; // Forward checking: a missing row has zero candidates.
+        if (num < min) { min = num; kind = 0; group = r; }
+      }
+      for (let g = 0; g < n; g++) {
+        if (!(ug & (1 << g))) { if (!gc[g]) return false; if (gc[g] < min) { min = gc[g]; kind = 1; group = g; } }
+        if (!(uc & (1 << g))) { if (!cc[g]) return false; if (cc[g] < min) { min = cc[g]; kind = 2; group = g; } }
+      }
+      for (let r = 0; r < n; r++) {
+        if (kind === 0 && r !== group) continue;
+        let available = rc[r];
+        while (available) {
+          const bit = available & -available; available -= bit; const c = 31 - Math.clz32(bit), g = map[r * n + c];
+          if ((kind === 1 && g !== group) || (kind === 2 && c !== group)) continue;
+          rowC[r] = c;
+          const stop = dfs(ur | (1 << r), uc | bit, ug | (1 << g), depth + 1);
+          rowC[r] = -1;
+          if (stop) return true; // Stop immediately on the second solution (or requested limit).
+        }
+      }
+      return false;
+    };
+    dfs(usedR, usedC, usedG, fixed.length);
+    return { count, nodes, solution };
+  }
+}
+class Logic {
+  // Deliberately limited, explainable deductions; never reads the hidden solution.
+  static next(n, map, cats = [], excluded = []) {
+    const catSet = new Set(cats), banned = new Set(excluded);
+    const candidates = Array.from({ length: n * n }, (_, i) => i).filter(i => !catSet.has(i) && !banned.has(i) && !cats.some(c => Rules.conflicts(i, c, n, map)));
+    const groups = Rules.groups(n, map).filter(g => !g.ids.some(i => catSet.has(i))).map(g => ({ ...g, options: g.ids.filter(i => candidates.includes(i)) }));
+    for (const g of groups) {
+      if (!g.options.length) return { kind: 'error', ids: g.ids, reason: `${g.label}已经没有合法位置了，请检查最近放的猫或手动排除。` };
+      if (g.options.length === 1) return { kind: 'cat', ids: g.options, source: g.ids, reason: `${g.label}只剩一个合法位置，猫猫一定藏在绿色框里。` };
+    }
+    // Generalized locked candidates: if EVERY candidate of an unsatisfied group conflicts with X, X is impossible.
+    for (const g of groups) {
+      const options = new Set(g.options);
+      const ids = candidates.filter(i => !options.has(i) && g.options.every(j => Rules.conflicts(i, j, n, map)));
+      if (ids.length) return { kind: 'exclude', ids, source: g.options, reason: `${g.label}的猫无论落在哪个候选格，都会排除绿色框中的 ${ids.length} 格，所以这些位置可以标 ×。` };
+    }
+    return null;
+  }
+  static replay(n, map) {
+    const cats = [], excluded = new Set(); let steps = 0;
+    while (steps <= n * n + n) {
+      if (cats.length === n) return { solved: true, steps };
+      const step = this.next(n, map, cats, excluded);
+      if (!step || step.kind === 'error') return { solved: false, steps };
+      if (step.kind === 'cat') cats.push(step.ids[0]); else for (const i of step.ids) excluded.add(i);
+      steps++;
+    }
+    return { solved: false, steps };
+  }
+}
+class LevelGenerator {
+  constructor(n, seed) { if (n < 5 || n > 8) throw new Error('请选择 5–8 阶棋盘'); this.n = n; this.seed = seed >>> 0; this.rng = new Random(seed); this.attempts = 0; }
+  terminal() {
+    const { n, rng } = this, cols = new Int8Array(n).fill(-1);
+    const search = (r, used) => {
+      if (r === n) return true;
+      for (const c of rng.shuffle(Array.from({ length: n }, (_, i) => i))) {
+        if ((used & (1 << c)) || (r && Math.abs(cols[r - 1] - c) <= 1)) continue;
+        cols[r] = c; if (search(r + 1, used | (1 << c))) return true;
+      }
+      cols[r] = -1; return false;
+    };
+    if (!search(0, 0)) throw new Error('无法生成合法终局');
+    return Array.from(cols, (c, r) => r * n + c);
+  }
+  flood(seeds) {
+    const { n, rng } = this, map = new Int8Array(n * n).fill(-1), sizes = new Uint8Array(n);
+    const front = Array.from({ length: n }, () => []);
+    // Start moderately balanced, increase shape diversity on retries. A size penalty tempers growth.
+    const spread = Math.min(18, 10 + this.attempts * .18), weights = Array.from({ length: n }, () => Math.exp(rng.next() * spread));
+    const add = (id, g) => { map[id] = g; sizes[g]++; for (const j of Rules.neighbors(id, n)) if (map[j] < 0) front[g].push(j); };
+    seeds.forEach((id, g) => add(id, g));
+    for (let left = n * n - n; left > 0; left--) {
+      let active = [];
+      for (let g = 0; g < n; g++) { front[g] = front[g].filter(i => map[i] < 0); if (front[g].length) active.push(g); }
+      const tiny = active.filter(g => sizes[g] < 2); if (tiny.length) active = tiny;
+      const total = active.reduce((sum, g) => sum + weights[g] / sizes[g], 0); let pick = rng.next() * total, g = active[active.length - 1];
+      for (const h of active) { pick -= weights[h] / sizes[h]; if (pick <= 0) { g = h; break; } }
+      add(front[g][rng.int(front[g].length)], g);
+    }
+    return { map, sizes };
+  }
+  attempt() {
+    this.attempts++;
+    const seeds = this.terminal(), { map, sizes } = this.flood(seeds);
+    if (Math.min(...sizes) < 2) return null;
+    const exact = new Solver(this.n, map).solve();
+    if (exact.count !== 1) return null;
+    const logic = Logic.replay(this.n, map); if (!logic.solved) return null;
+    return { n: this.n, map: Array.from(map), solution: exact.solution, seed: this.seed, attempts: this.attempts, nodes: exact.nodes, logicSteps: logic.steps, sizes: Array.from(sizes) };
+  }
+  static generate(n, seed, maxAttempts = 100) {
+    const start = performance.now(), gen = new LevelGenerator(n, seed);
+    while (gen.attempts < maxAttempts) { const level = gen.attempt(); if (level) return { ...level, computeMs: performance.now() - start }; }
+    throw new Error(`${maxAttempts} 次尝试均未通过双重校验，请再试一次。`);
+  }
+}
+globalThis.CatEngine = { Random, Rules, Solver, Logic, LevelGenerator };
+</script>
+<!-- MODULE 2: state + history. No DOM, audio, generator or hidden answer dependency. -->
+<script id="state-module">
+'use strict';
+class GameState {
+  constructor(n, map) { this.n = n; this.map = map; this.cells = new Uint8Array(n * n); this.past = []; this.future = []; this.pending = null; }
+  cats() { return Array.from(this.cells.keys()).filter(i => this.cells[i] === 2); }
+  crosses() { return Array.from(this.cells.keys()).filter(i => this.cells[i] === 1); }
+  begin() { if (!this.pending) this.pending = this.cells.slice(); }
+  commit() {
+    if (!this.pending) return false;
+    const changed = this.cells.some((v, i) => v !== this.pending[i]);
+    if (changed) { this.past.push(this.pending); this.future.length = 0; }
+    this.pending = null; return changed;
+  }
+  cancel() { if (this.pending) this.cells = this.pending; this.pending = null; }
+  transact(fn) { this.begin(); fn(this.cells); return this.commit(); }
+  undo() { if (!this.past.length) return false; this.future.push(this.cells.slice()); this.cells = this.past.pop(); return true; }
+  redo() { if (!this.future.length) return false; this.past.push(this.cells.slice()); this.cells = this.future.pop(); return true; }
+  autoMarks(enabled) {
+    const counts = new Uint8Array(this.n * this.n); if (!enabled) return counts;
+    // Recompute reference counts: overlapping automatic exclusions survive removal of just one cat.
+    for (const cat of this.cats()) for (let i = 0; i < counts.length; i++) if (i !== cat && Rules.conflicts(cat, i, this.n, this.map)) counts[i]++;
+    return counts;
+  }
+  complete() { const cats = this.cats(); return cats.length === this.n && Rules.conflictInfo(this.n, this.map, cats).bad.size === 0; }
+}
+globalThis.CatState = GameState;
+</script>
+<!-- MODULE 3: browser services, renderer, input controller. Split into game.js when needed. -->
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const icon = (id, cls = '') => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+const CAT = icon('cat-art', 'cat-face');
+const PALETTE = ['#c9dfce','#f0dfa5','#edc5c5','#c6dce9','#d8cce6','#efc8a8','#c6d9d7','#e0d5bc'];
+class AudioFX {
+  constructor() { this.enabled = false; this.ctx = null; }
+  unlock() {
+    if (!this.enabled) return;
+    try { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); } catch (_) { /* Unsupported audio is non-fatal. */ }
+  }
+  play(kind) {
+    if (!this.enabled) return; this.unlock(); if (!this.ctx || this.ctx.state !== 'running') return;
+    const sequence = kind === 'win' ? [[523,0,.45],[659,.08,.45],[784,.16,.6],[1047,.26,.75]] : kind === 'cat' ? [[660,0,.1],[880,.06,.15]] : [[kind === 'erase' ? 350 : 520,0,.055]];
+    for (const [frequency, delay, duration] of sequence) {
+      const osc = this.ctx.createOscillator(), gain = this.ctx.createGain(), start = this.ctx.currentTime + delay;
+      osc.type = 'sine'; osc.frequency.setValueAtTime(frequency, start); gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(.065, start + .008); gain.gain.exponentialRampToValueAtTime(.001, start + duration);
+      osc.connect(gain); gain.connect(this.ctx.destination); osc.start(start); osc.stop(start + duration + .02);
+    }
+  }
+}
+class GameClock {
+  constructor(render) { this.render = render; this.total = 0; this.since = null; this.started = false; this.solved = false; setInterval(() => this.render(this.ms()), 250); }
+  ms() { return this.total + (this.since === null ? 0 : performance.now() - this.since); }
+  pause() { if (this.since !== null) { this.total += performance.now() - this.since; this.since = null; } }
+  reset() { this.total = 0; this.since = null; this.started = false; this.solved = false; this.render(0); }
+  touch() { this.started = true; this.sync(); }
+  sync() { if (document.hidden || this.solved) this.pause(); else if (this.started && this.since === null) this.since = performance.now(); this.render(this.ms()); }
+  static format(ms) { const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`; }
+}
+class LevelService {
+  constructor() { this.worker = null; this.ticket = 0; this.reject = null; }
+  cancel() { this.ticket++; if (this.worker) this.worker.terminate(); this.worker = null; if (this.reject) this.reject(new Error('cancelled')); this.reject = null; }
+  async create(n, seed) {
+    this.cancel(); const ticket = this.ticket;
+    if (typeof Worker !== 'undefined') {
+      let url;
+      try {
+        const source = $('engine').textContent + '\nonmessage = e => { try { postMessage({level: LevelGenerator.generate(e.data.n,e.data.seed)}); } catch(e) { postMessage({error:e.message}); } };';
+        url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' })); this.worker = new Worker(url);
+      } catch (_) { this.worker = null; } finally { if (url) URL.revokeObjectURL(url); }
+      if (this.worker) {
+        try {
+          return await new Promise((resolve, reject) => {
+            this.reject = reject;
+            this.worker.onmessage = e => { if (e.data.error) reject(new Error(e.data.error)); else resolve(e.data.level); };
+            this.worker.onerror = e => { e.preventDefault(); reject(new Error('worker unavailable')); };
+            this.worker.postMessage({ n, seed });
+          });
+        } catch (e) { if (e.message !== 'worker unavailable') throw e; }
+        finally { if (ticket === this.ticket) { if (this.worker) this.worker.terminate(); this.worker = null; this.reject = null; } }
+      }
+    }
+    // file:// / restrictive CSP fallback: yield between attempts. Never block UI for an entire retry batch.
+    const start = performance.now(), gen = new LevelGenerator(n, seed);
+    while (gen.attempts < 100) {
+      await new Promise(resolve => setTimeout(resolve, 0)); if (ticket !== this.ticket) throw new Error('cancelled');
+      const level = gen.attempt(); if (level) return { ...level, computeMs: performance.now() - start };
+    }
+    throw new Error('100 次尝试均未通过双重校验，请再试一次。');
+  }
+}
+class Renderer {
+  constructor() { this.board = $('board'); this.nodes = []; this.shown = []; this.focusId = 0; }
+  build(n, map) {
+    this.nodes = []; this.shown = []; this.board.replaceChildren(); this.board.style.gridTemplateColumns = `repeat(${n},1fr)`;
+    this.board.setAttribute('aria-rowcount', n); this.board.setAttribute('aria-colcount', n);
+    // Rows use display:contents to retain real ARIA grid/row/gridcell semantics without nesting visual borders.
+    const first = map.map((g, i) => map.indexOf(g) === i);
+    for (let r = 0; r < n; r++) {
+      const row = document.createElement('div'); row.setAttribute('role','row'); row.style.display = 'contents';
+      for (let c = 0; c < n; c++) {
+        const i = r * n + c, cell = document.createElement('button');
+        cell.className = 'cell'; cell.dataset.id = i; cell.setAttribute('role','gridcell'); cell.setAttribute('aria-rowindex',r+1); cell.setAttribute('aria-colindex',c+1);
+        cell.tabIndex = i ? -1 : 0; cell.style.setProperty('--region-color', PALETTE[map[i]]);
+        if (c === n - 1) cell.classList.add('last-col'); else if (map[i] !== map[i+1]) cell.classList.add('edge-right');
+        if (r === n - 1) cell.classList.add('last-row'); else if (map[i] !== map[i+n]) cell.classList.add('edge-bottom');
+        cell.dataset.number = first[i] ? map[i] + 1 : ''; row.append(cell); this.nodes.push(cell);
+      }
+      this.board.append(row);
+    }
+    this.focusId = 0;
+  }
+  focus(i, move = true) { this.nodes[this.focusId]?.setAttribute('tabindex','-1'); this.focusId = i; this.nodes[i]?.setAttribute('tabindex','0'); if (move) this.nodes[i]?.focus({ preventScroll:true }); }
+  render(state, auto, conflict, hint, animate = true) {
+    const { n, map, cells } = state;
+    cells.forEach((value, i) => {
+      const node = this.nodes[i], display = value === 2 ? 'cat' : value === 1 ? 'x' : auto[i] ? 'auto' : 'empty';
+      if (this.shown[i] !== display) {
+        const number = node.dataset.number ? `<span class="region-number" aria-hidden="true">${node.dataset.number}</span>` : '';
+        node.innerHTML = number + (display === 'cat' ? CAT : display === 'empty' ? '' : `<span class="mark${display === 'auto' ? ' automatic' : ''}" aria-hidden="true"></span>`);
+        if (display === 'cat' && animate) node.firstElementChild?.parentElement.querySelector('.cat-face')?.classList.add('cat-pop');
+        this.shown[i] = display;
+      }
+      node.classList.toggle('conflict-cat', conflict.bad.has(i)); node.classList.toggle('conflict-zone', conflict.zones.has(i));
+      node.classList.toggle('hint-target', !!hint?.ids.includes(i)); node.classList.toggle('hint-source', !!hint?.source?.includes(i));
+      node.setAttribute('aria-label', `第${Math.floor(i/n)+1}行，第${i%n+1}列，色块${map[i]+1}，${display === 'cat' ? '猫' : display === 'x' ? '手动排除' : display === 'auto' ? '自动排除' : '空白'}${conflict.bad.has(i) ? '，存在冲突' : ''}`);
+    });
+    $('counter').textContent = `🐱 ${state.cats().length} / ${n}`;
+    $('undo').disabled = !state.past.length; $('redo').disabled = !state.future.length;
+    $('clear').disabled = !state.cells.some(v => v); $('hint').disabled = state.complete();
+  }
+  notice(text, type = '') { $('message').textContent = text; $('notice').dataset.type = type; }
+}
+class Celebration {
+  constructor() { this.frame = null; this.endTimer = null; }
+  stop() { cancelAnimationFrame(this.frame); clearTimeout(this.endTimer); $('confetti').hidden = true; }
+  start() {
+    this.stop(); if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const canvas = $('confetti'), ctx = canvas.getContext('2d'); if (!ctx) return;
+    const dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth, h = innerHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w+'px'; canvas.style.height = h+'px'; ctx.scale(dpr,dpr); canvas.hidden = false;
+    const pieces = Array.from({length:85}, () => ({ x:w/2, y:h*.4, vx:(Math.random()-.5)*12, vy:-Math.random()*10-2, rot:Math.random()*6, spin:(Math.random()-.5)*.2, color:PALETTE[Math.floor(Math.random()*8)], size:Math.random()*5+4 }));
+    const start = performance.now(); let previous = start;
+    const tick = now => {
+      const dt = Math.min(2.5,(now-previous)/16.67); previous=now; ctx.clearRect(0,0,w,h); ctx.globalAlpha=Math.min(1,(3800-(now-start))/900);
+      for (const p of pieces) { p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=.12*dt; p.rot+=p.spin*dt; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.color; ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size*.6); ctx.restore(); }
+      if (now-start<3800) this.frame=requestAnimationFrame(tick); else this.stop();
+    }; this.frame=requestAnimationFrame(tick);
+  }
+}
+class Game {
+  constructor() {
+    this.view = new Renderer(); this.audio = new AudioFX(); this.clock = new GameClock(ms => $('timer').textContent = GameClock.format(ms));
+    this.levels = new LevelService(); this.celebration = new Celebration(); this.state = null; this.level = null; this.n = 5; this.auto = true; this.mode = 'cycle';
+    this.busy = false; this.hint = null; this.conflict = { bad:new Set(), zones:new Set() }; this.conflictTimer = null; this.gesture = null; this.run = 0; this.won = false;
+    this.restoreSettings(); this.bind(); this.newLevel(this.n);
+  }
+  restoreSettings() {
+    try { const s = JSON.parse(localStorage.getItem('find-cat-settings') || '{}'); this.auto = s.auto !== false; this.audio.enabled = s.sound === true; this.mode = s.mode === 'cat' ? 'cat' : 'cycle'; } catch (_) {}
+    this.updateSettings();
+  }
+  updateSettings() {
+    $('auto').setAttribute('aria-checked', String(this.auto)); $('sound').setAttribute('aria-pressed', String(this.audio.enabled));
+    $('sound').setAttribute('aria-label', this.audio.enabled ? '关闭音效' : '开启音效'); $('sound').innerHTML = icon(this.audio.enabled ? 'i-sound' : 'i-mute');
+    document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.mode === this.mode)));
+    try { localStorage.setItem('find-cat-settings',JSON.stringify({auto:this.auto,sound:this.audio.enabled,mode:this.mode})); } catch (_) {}
+  }
+  seed() { try { return crypto.getRandomValues(new Uint32Array(1))[0]; } catch (_) { return (Date.now() ^ Math.floor(Math.random()*4294967296))>>>0; } }
+  async newLevel(n) {
+    const run = ++this.run; this.abortGesture(); this.busy = true; this.clock.pause(); this.celebration.stop(); this.resetFeedback();
+    if ($('win-dialog').open) $('win-dialog').close(); if ($('clear-dialog').open) $('clear-dialog').close();
+    $('loading').hidden = false; $('loading-text').textContent = '猫猫正在寻找藏身处…'; this.view.board.setAttribute('aria-busy','true'); this.view.board.inert = true;
+    if (!this.state) { this.view.build(n,Array.from({length:n*n},(_,i)=>Math.floor(i/n))); this.view.board.style.aspectRatio='1'; }
+    this.setBusyButtons(true); this.view.notice('正在生成并验证唯一解，猫猫马上就来。');
+    try {
+      const level = await this.levels.create(n,this.seed()); if (run !== this.run) return;
+      this.level = level; this.n = n; this.state = new GameState(n,level.map); this.won = false; this.hint = null; this.clock.reset();
+      this.view.build(n,level.map); $('level-name').textContent = ['猫猫的小花园','午后的小迷藏','藏在云朵之间','猫猫的秘密领地'][n-5];
+      $('level-meta').textContent = `${n} 个色块 · 逻辑可解`;
+      $('verified').title = `唯一解 / ${level.nodes} 搜索节点 / ${level.attempts} 次生成 / ${level.computeMs.toFixed(1)}ms / ${level.logicSteps} 步逻辑回放 / 种子 ${level.seed}`;
+      document.querySelectorAll('[data-size]').forEach(b => b.setAttribute('aria-pressed',String(+b.dataset.size===n)));
+      this.view.notice('先从小小的色块看起，也许猫猫就在那里。');
+    } catch (e) {
+      if (run !== this.run || e.message === 'cancelled') return;
+      this.view.notice(`生成暂未成功：${e.message} 点击“新关卡”重试。`, 'error'); this.clock.sync();
+    } finally {
+      if (run === this.run) { this.busy = false; $('loading').hidden = true; this.view.board.setAttribute('aria-busy','false'); this.view.board.inert = !this.state; this.setBusyButtons(false); if (this.state) this.render(false); }
+    }
+  }
+  setBusyButtons(busy) { for (const id of ['undo','redo','clear','hint','new']) $(id).disabled=busy; document.querySelectorAll('[data-size]').forEach(b=>b.disabled=busy); }
+  render(animate=true) { if (!this.state) return; this.autoCounts=this.state.autoMarks(this.auto); this.view.render(this.state,this.autoCounts,this.conflict,this.hint,animate); }
+  resetFeedback() { clearTimeout(this.conflictTimer); this.hint=null; this.conflict={bad:new Set(),zones:new Set()}; $('apply-hint').hidden=true; }
+  afterChange(changed=true) {
+    this.resetFeedback(); this.render(); if (!changed) return;
+    this.clock.touch(); const complete=this.state.complete(); this.clock.solved=complete; this.clock.sync();
+    if (!complete) {
+      this.won=false;
+      if ($('win-dialog').open) $('win-dialog').close(); this.celebration.stop();
+      this.view.notice('慢慢观察，每一个排除都离猫猫更近一点。');
+      this.conflictTimer=setTimeout(()=>{
+        this.conflict=Rules.conflictInfo(this.n,this.state.map,this.state.cats()); this.render(false);
+        if(this.conflict.bad.size) this.view.notice('有猫猫挤在一起啦。红色位置违反了行、列、色块或不相邻约定。','error');
+      },300);
+    } else {
+      this.view.notice('所有猫猫都找到了，它们正开心地打着呼噜。');
+      if (!this.won) { this.won=true; this.audio.play('win'); this.celebration.start(); $('win-time').textContent=GameClock.format(this.clock.ms()); $('win-detail').textContent=`${this.n} × ${this.n} · ${this.n} 只猫 · ${this.state.past.length} 步操作`;
+        $('win-dialog').showModal(); }
+    }
+  }
+  act(id,kind='tap') {
+    if (this.busy || !this.state) return; this.abortGesture(); this.audio.unlock(); const old=this.state.cells[id];
+    const changed=this.state.transact(cells=>{
+      if(kind==='x') cells[id]=old===1?0:1;
+      else if(kind==='cat'||this.mode==='cat') cells[id]=old===2?0:2;
+      else cells[id]=old===2?0:old===1||this.autoCounts?.[id]?2:1;
+    });
+    this.audio.play(this.state.cells[id]===2?'cat':this.state.cells[id]===0?'erase':'tick'); this.afterChange(changed);
+  }
+  history(direction) { if (this.busy || !this.state) return; this.abortGesture(); const changed=this.state[direction](); if(changed){this.audio.play('tick');this.afterChange();} }
+  showHint() {
+    if(this.busy||!this.state) return; this.abortGesture(); this.resetFeedback();
+    const cats=this.state.cats(), info=Rules.conflictInfo(this.n,this.state.map,cats);
+    if(info.bad.size){this.conflict=info;this.view.notice('先解决红色猫猫的冲突：它们共用了行、列、色块，或彼此相邻。','error');this.render(false);return;}
+    // An incorrect manual exclusion is NOT a logical premise. Verify consistency before explaining deductions.
+    const check=new Solver(this.n,this.state.map).solve({limit:1,fixed:cats,banned:this.state.crosses()});
+    if(!check.count){this.hint={kind:'error',ids:[...cats,...this.state.crosses()]};this.view.notice('一致性检查：当前猫或手动 × 已使棋盘无解。请撤销最近操作；这不是可继续推理的盘面。','error');this.render(false);return;}
+    const auto=Array.from(this.state.autoMarks(true).keys()).filter(i=>this.state.autoMarks(true)[i]&&this.state.cells[i]!==2);
+    this.hint=Logic.next(this.n,this.state.map,cats,[...this.state.crosses(),...auto]);
+    if(!this.hint){this.view.notice('暂时没有单格或共同排除提示。可以检查遗漏的标记，或撤销一步换个角度。');this.render(false);return;}
+    this.view.notice(this.hint.reason,this.hint.kind==='error'?'error':''); $('apply-hint').hidden=this.hint.kind==='error'; this.render(false);
+  }
+  applyHint() {
+    if(!this.hint||this.busy||this.hint.kind==='error')return; this.abortGesture(); const {kind,ids}=this.hint;
+    const changed=this.state.transact(cells=>{for(const id of ids)if(kind==='cat')cells[id]=2;else if(cells[id]!==2)cells[id]=1;});
+    this.audio.play(kind==='cat'?'cat':'tick');this.afterChange(changed);
+  }
+  abortGesture() {
+    if(!this.gesture)return; const pointer=this.gesture.pointer;this.gesture=null;this.state?.cancel();
+    if(this.view.board.hasPointerCapture(pointer))this.view.board.releasePointerCapture(pointer); this.render(false);
+  }
+  pointerDown(e) {
+    if(this.busy||!this.state||this.gesture||e.isPrimary===false||!e.target.closest('.cell'))return;
+    const id=+e.target.closest('.cell').dataset.id;this.view.focus(id,false);this.audio.unlock();e.preventDefault();
+    if(e.button===2){this.act(id,'x');return;}if(e.button!==0)return;
+    this.resetFeedback();this.state.begin();this.gesture={pointer:e.pointerId,start:id,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,drag:false,erase:this.state.cells[id]===1,visited:new Set(),lastSound:0};
+    this.view.board.setPointerCapture(e.pointerId);
+  }
+  markDrag(id) {
+    const g=this.gesture;if(!g||g.visited.has(id))return;g.visited.add(id);if(this.state.cells[id]===2)return;
+    const value=g.erase?0:1;if(this.state.cells[id]===value)return;this.state.cells[id]=value;this.clock.touch();
+    if(performance.now()-g.lastSound>60){this.audio.play(g.erase?'erase':'tick');g.lastSound=performance.now();}
+  }
+  pointerMove(e) {
+    const g=this.gesture;if(!g||g.pointer!==e.pointerId)return;e.preventDefault();
+    if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)<7)return;
+    if(!g.drag){g.drag=true;this.markDrag(g.start);}
+    // Sample the complete segment so fast mouse/touch movement doesn't skip crossed cells.
+    const points=Math.ceil(Math.hypot(e.clientX-g.lastX,e.clientY-g.lastY)/Math.max(4,this.view.board.clientWidth/this.n/3));
+    for(let j=1;j<=points;j++){const node=document.elementFromPoint(g.lastX+(e.clientX-g.lastX)*j/points,g.lastY+(e.clientY-g.lastY)*j/points)?.closest('.cell');if(node&&this.view.board.contains(node))this.markDrag(+node.dataset.id);}
+    g.lastX=e.clientX;g.lastY=e.clientY;this.render(false);
+  }
+  pointerUp(e) {
+    const g=this.gesture;if(!g||g.pointer!==e.pointerId)return;this.gesture=null;
+    if(this.view.board.hasPointerCapture(e.pointerId))this.view.board.releasePointerCapture(e.pointerId);
+    if(g.drag){const changed=this.state.commit();this.afterChange(changed);}else{this.state.cancel();this.act(g.start);}
+  }
+  bind() {
+    $('new').addEventListener('click',()=>this.newLevel(this.n));document.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>this.newLevel(+b.dataset.size)));
+    $('undo').addEventListener('click',()=>this.history('undo'));$('redo').addEventListener('click',()=>this.history('redo'));
+    $('hint').addEventListener('click',()=>this.showHint());$('apply-hint').addEventListener('click',()=>this.applyHint());
+    $('clear').addEventListener('click',()=>{this.abortGesture();if(this.state&&!this.busy)$('clear-dialog').showModal();});
+    $('clear-cancel').addEventListener('click',()=>$('clear-dialog').close());$('clear-confirm').addEventListener('click',()=>{$('clear-dialog').close();if(!this.state||this.busy)return;const changed=this.state.transact(cells=>cells.fill(0));this.afterChange(changed);});
+    $('win-close').addEventListener('click',()=>$('win-dialog').close());$('win-next').addEventListener('click',()=>this.newLevel(this.n));
+    $('auto').addEventListener('click',()=>{this.abortGesture();this.auto=!this.auto;this.updateSettings();this.resetFeedback();this.render(false);});
+    $('sound').addEventListener('click',()=>{this.audio.enabled=!this.audio.enabled;this.updateSettings();this.audio.play('cat');});
+    document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{this.mode=b.dataset.mode;this.updateSettings();}));
+    $('help').addEventListener('click',()=>{$('help-details').open=true;$('rules').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});$('rules').focus({preventScroll:true});});
+    const board=this.view.board;board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>this.pointerDown(e));board.addEventListener('pointermove',e=>this.pointerMove(e));board.addEventListener('pointerup',e=>this.pointerUp(e));
+    board.addEventListener('pointercancel',()=>this.abortGesture());board.addEventListener('lostpointercapture',()=>this.abortGesture());
+    // Pointer clicks are handled by pointerup; detail=0 is keyboard or assistive-technology activation.
+    board.addEventListener('click',e=>{if(e.detail===0&&e.target.closest('.cell'))this.act(+e.target.closest('.cell').dataset.id);});
+    board.addEventListener('keydown',e=>{
+      if(this.busy||!this.state||e.ctrlKey||e.metaKey||e.altKey)return;const node=e.target.closest('.cell');if(!node)return;
+      const id=+node.dataset.id,r=Math.floor(id/this.n),c=id%this.n;let target=id;
+      if(e.key==='ArrowLeft')target=r*this.n+Math.max(0,c-1);else if(e.key==='ArrowRight')target=r*this.n+Math.min(this.n-1,c+1);else if(e.key==='ArrowUp')target=Math.max(0,r-1)*this.n+c;else if(e.key==='ArrowDown')target=Math.min(this.n-1,r+1)*this.n+c;
+      else if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!e.repeat)this.act(id);return;}else if(e.key.toLowerCase()==='x'){e.preventDefault();if(!e.repeat)this.act(id,'x');return;}else if(e.key.toLowerCase()==='c'){e.preventDefault();if(!e.repeat)this.act(id,'cat');return;}else return;
+      e.preventDefault();this.view.focus(target);
+    });
+    document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.matches('input,textarea,[contenteditable="true"]'))return;if((e.ctrlKey||e.metaKey)&&!e.altKey){const key=e.key.toLowerCase();if(key==='z'||key==='y'){e.preventDefault();this.history(key==='y'||e.shiftKey?'redo':'undo');}}});
+    document.addEventListener('visibilitychange',()=>{this.abortGesture();this.clock.sync();});window.addEventListener('blur',()=>this.abortGesture());
+  }
+}
+// Exposed for reproducible diagnostics / future editor integration, not used to compare the player's answer.
+window.catGame = new Game();
+</script>
+</body>
+</html>
