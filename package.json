@@ -1,0 +1,22 @@
+{
+  "name": "find-the-cat",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Find the Cat — SQLite-backed progressive logic puzzle",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node seed_levels.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "setup": "node scripts/setup_env.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
