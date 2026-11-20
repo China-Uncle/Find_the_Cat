@@ -15,6 +15,14 @@ const ANSWER = [2, 4, 11, 13];
 const REGIONS = [1, 0, 0, 2, 1, 0, 2, 2, 1, 3, 2, 2, 1, 3, 2, 2];
 const PRACTICE = '/api/admin/practice/';
 const GAME = '/api/game/';
+// Fetch blocks these ports even when listen(0) selects one on loopback.
+const FETCH_BLOCKED_PORTS = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+  101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179,
+  389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601,
+  636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566,
+  6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+]);
 const RUN_KEYS = ['id', 'levelId', 'hearts', 'cats', 'revision', 'status', 'elapsedMs', 'expiresAt'].sort();
 
 function sign(id, claims = {}, secret = SECRET) {
@@ -59,9 +67,16 @@ async function fixture(t, env = {}) {
     ADMIN_GITHUB_USERNAME: '  cAtAdMiN  ', ADMIN_SECRET: 'generation-only-secret-long-enough',
     RUN_TTL_HOURS: '1', TRUST_PROXY_HOPS: '0', ...env,
   } });
-  server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const base = `http://127.0.0.1:${server.address().port}`;
+  let port;
+  do {
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    port = server.address().port;
+    if (!FETCH_BLOCKED_PORTS.has(port)) break;
+    t.diagnostic(`Rebinding fetch-blocked listener port=${port} before HTTP requests`);
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  } while (true);
+  const base = `http://127.0.0.1:${port}`;
   async function request(endpoint, body, { user = 'admin', token, headers = {}, method } = {}) {
     const authorization = token !== undefined ? token : user === null ? null : sign(ids[user]);
     const response = await fetch(base + endpoint, {
@@ -69,6 +84,11 @@ async function fixture(t, env = {}) {
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(authorization ? { Authorization: `Bearer ${authorization}` } : {}), ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }).catch(error => {
+      t.diagnostic(`HTTP request failed: port=${port}, cause=${JSON.stringify({
+        message: error.cause?.message ?? error.message, code: error.cause?.code ?? null,
+      })}`);
+      throw error;
     });
     const data = await response.json();
     noSolution(data);

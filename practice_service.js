@@ -1,7 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { transaction } = require('./db');
-const { GameService, assert, int } = require('./game_service');
+const { GameService, assert, int, submissionInput, submissionCats } = require('./game_service');
 
 function inputObject(input) {
   assert(input && typeof input === 'object' && !Array.isArray(input), 400, '请求体必须为 JSON 对象');
@@ -100,6 +100,32 @@ class PracticeService {
       this.db.prepare('INSERT INTO practice_moves(run_id,request_id,cell,operation,result_json) VALUES(?,?,?,?,?)')
         .run(runId, requestId, cell, operation, JSON.stringify(result));
       return result;
+    });
+  }
+
+  submit(userId, input = {}) {
+    const receivedAt = this.now();
+    const { runId, levelId, cats } = submissionInput(input);
+    return transaction(this.db, () => {
+      this.game.user(userId);
+      const run = this.getRun(userId, runId);
+      assert(run.level_id === levelId, 409, '本局不属于该关卡', 'LEVEL_MISMATCH');
+      assert(run.expires_at > receivedAt, 409, '本局已过期，请重新开始', 'RUN_EXPIRED');
+      assert(['playing', 'ready', 'completed'].includes(run.status) && run.hearts > 0,
+        409, run.status === 'failed' || !run.hearts ? '红心已用完，请重新开始' : '本局已结束', 'RUN_FINISHED');
+      const level = this.db.prepare('SELECT size,solution FROM levels WHERE id=?').get(levelId);
+      const storedCats = submissionCats(cats, level);
+      // The retained practice run is its own receipt; never write official scores or progress.
+      if (run.status !== 'completed') {
+        this.db.prepare("UPDATE practice_runs SET cats=?,finished_at=?,status='completed',revision=revision+1 WHERE id=?")
+          .run(storedCats, receivedAt, runId);
+        run.finished_at = receivedAt;
+      }
+      const next = this.db.prepare('SELECT id FROM levels WHERE id>? ORDER BY id LIMIT 1').get(levelId);
+      return {
+        practice: true, levelId, elapsedMs: Math.max(1, run.finished_at - run.started_at),
+        totalLevels: this.game.total(), nextLevelId: next ? next.id : null,
+      };
     });
   }
 

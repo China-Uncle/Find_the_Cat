@@ -44,26 +44,133 @@
 <script>
 'use strict';
 // Pure domain layer — portable to a WeChat Mini Program. No browser globals or I/O.
+// Exact MRV over rows/columns/regions. Compute once on load, never per tap.
+class PuzzleSolver {
+  constructor(n, map) {
+    if (!Number.isInteger(n) || n < 1 || n > 12 || !map || map.length !== n * n || Array.from(map).some(g => !Number.isInteger(g) || g < 0 || g >= n)) throw new Error('无效的棋盘');
+    this.n = n; this.map = map;
+  }
+  // Exact MRV over THREE constraint families: rows, regions and columns. No time cutoff can masquerade as uniqueness.
+  solve({ limit = 2, fixed = [], banned = [], onProgress } = {}) {
+    if (!Number.isInteger(limit) || limit < 1) throw new Error('limit 必须为正整数');
+    const { n, map } = this, full = (1 << n) - 1, rowC = new Int8Array(n).fill(-1), ban = new Uint8Array(n * n);
+    for (const id of banned) { if (!Number.isInteger(id) || id < 0 || id >= n * n) throw new Error('无效的排除位置'); ban[id] = 1; }
+    let usedR = 0, usedC = 0, usedG = 0, count = 0, nodes = 0, solution = null;
+    for (const id of fixed) {
+      if (!Number.isInteger(id) || id < 0 || id >= n * n || ban[id]) return { count: 0, nodes: 0, solution: null };
+      const r = Math.floor(id / n), c = id % n, g = map[id];
+      if ((usedR & (1 << r)) || (usedC & (1 << c)) || (usedG & (1 << g)) ||
+          (r > 0 && rowC[r - 1] >= 0 && Math.abs(rowC[r - 1] - c) <= 1) ||
+          (r + 1 < n && rowC[r + 1] >= 0 && Math.abs(rowC[r + 1] - c) <= 1)) return { count: 0, nodes: 0, solution: null };
+      rowC[r] = c; usedR |= 1 << r; usedC |= 1 << c; usedG |= 1 << g;
+    }
+    // Depth-local buffers avoid candidate array churn and preserve a parent's MRV candidates on return.
+    const masks = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const regionCounts = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const colCounts = Array.from({ length: n + 1 }, () => new Uint16Array(n));
+    const dfs = (ur, uc, ug, depth) => {
+      nodes++;
+      if (onProgress && nodes % 2048 === 0) onProgress(nodes);
+      if (ur === full) { count++; if (!solution) solution = Array.from(rowC, (c, r) => r * n + c); return count >= limit; }
+      const rc = masks[depth], gc = regionCounts[depth], cc = colCounts[depth]; gc.fill(0); cc.fill(0);
+      let min = Infinity, kind = 0, group = -1;
+      for (let r = 0; r < n; r++) {
+        rc[r] = 0; if (ur & (1 << r)) continue;
+        let available = full & ~uc;
+        // Only adjacent rows can violate the 8-neighbor rule; columns already exclude all vertical neighbors.
+        for (const nr of [r - 1, r + 1]) if (nr >= 0 && nr < n && rowC[nr] >= 0) {
+          const b = 1 << rowC[nr]; available &= ~(b | (b << 1) | (b >>> 1));
+        }
+        let num = 0;
+        while (available) {
+          const bit = available & -available; available -= bit; const c = 31 - Math.clz32(bit), id = r * n + c, g = map[id];
+          if ((ug & (1 << g)) || ban[id]) continue;
+          rc[r] |= bit; num++; gc[g]++; cc[c]++;
+        }
+        if (!num) return false; // Forward checking: a missing row has zero candidates.
+        if (num < min) { min = num; kind = 0; group = r; }
+      }
+      for (let g = 0; g < n; g++) {
+        if (!(ug & (1 << g))) { if (!gc[g]) return false; if (gc[g] < min) { min = gc[g]; kind = 1; group = g; } }
+        if (!(uc & (1 << g))) { if (!cc[g]) return false; if (cc[g] < min) { min = cc[g]; kind = 2; group = g; } }
+      }
+      for (let r = 0; r < n; r++) {
+        if (kind === 0 && r !== group) continue;
+        let available = rc[r];
+        while (available) {
+          const bit = available & -available; available -= bit; const c = 31 - Math.clz32(bit), g = map[r * n + c];
+          if ((kind === 1 && g !== group) || (kind === 2 && c !== group)) continue;
+          rowC[r] = c;
+          const stop = dfs(ur | (1 << r), uc | bit, ug | (1 << g), depth + 1);
+          rowC[r] = -1;
+          if (stop) return true; // Stop immediately on the second solution (or requested limit).
+        }
+      }
+      return false;
+    };
+    dfs(usedR, usedC, usedG, fixed.length);
+    return { count, nodes, solution };
+  }
+}
 class GameEngine {
   constructor(onChange=()=>{}){this.onChange=onChange;this.resetData();}
-  resetData(){this.level=null;this.run=null;this.marks=[];this.hearts=3;this.elapsedMs=0;this.status='idle';this.revision=0;this.pending=new Map();this.sequence=0;this.onChange(this.snapshot());}
-  load(level,run){this.level={...level};this.run={...run};this.marks=Array(level.size**2).fill(0);for(const c of run.cats)this.marks[c]=2;this.hearts=run.hearts;this.elapsedMs=run.elapsedMs;this.revision=run.revision;this.status=run.status;this.onChange(this.snapshot());}
+  resetData(){this.level=null;this.run=null;this.solution=new Set();this.marks=[];this.hearts=3;this.elapsedMs=0;this.status='idle';this.revision=0;this.onChange(this.snapshot());}
+  static prepare(level){
+    const solved=new PuzzleSolver(level.size,level.regions).solve({limit:2});
+    if(solved.count!==1)throw new Error('关卡不是唯一解，请联系管理员检查题库');
+    return solved.solution;
+  }
+  load(level,run,answer=GameEngine.prepare(level)){
+    this.level={...level};this.run={...run};this.solution=new Set(answer);
+    this.marks=Array(level.size**2).fill(0);
+    for(const c of run.cats)if(this.solution.has(c))this.marks[c]=2;
+    this.hearts=run.hearts;this.elapsedMs=run.elapsedMs;this.revision=run.revision;this.status=run.status;
+    this.onChange(this.snapshot());
+  }
   snapshot(){return {level:this.level,run:this.run,marks:[...this.marks],hearts:this.hearts,elapsedMs:this.elapsedMs,revision:this.revision,status:this.status};}
   setElapsed(ms){this.elapsedMs=ms;}
   setHearts(n){this.hearts=n;this.onChange(this.snapshot());}
   setStatus(s){this.status=s;this.onChange(this.snapshot());}
-  applyMark(cell,value){this.marks[cell]=value;this.onChange(this.snapshot());}
-  requestMove(cell,operation){const requestId=`${this.run.id}_${this.revision}_${++this.sequence}`;this.pending.set(requestId,{cell,operation});return {runId:this.run.id,requestId,cell,operation,revision:this.revision};}
-  acceptMove(result){const {run}=result;this.run={...run};this.hearts=run.hearts;this.revision=run.revision;this.elapsedMs=run.elapsedMs;this.status=run.status;this.marks[result.cell]=result.correct?(result.operation==='remove'?0:2):0;this.onChange(this.snapshot());}
+  applyMark(cell,value){
+    if(this.status!=='playing'||!Number.isInteger(cell)||cell<0||cell>=this.marks.length||![0,1].includes(value)||this.marks[cell]===2)return false;
+    this.marks[cell]=value;this.onChange(this.snapshot());return true;
+  }
+  // Local-only mutation. Hearts are a casual-game mechanic, not a security boundary.
+  move(cell,operation){
+    if(this.status!=='playing'||!Number.isInteger(cell)||cell<0||cell>=this.marks.length||!['place','remove'].includes(operation))return null;
+    if(operation==='remove'){
+      if(this.marks[cell]!==2)return null;
+      this.marks[cell]=0;
+    }else{
+      if(this.marks[cell]===2)return null;
+      if(!this.solution.has(cell)){
+        this.marks[cell]=0;this.hearts--;
+        if(!this.hearts)this.status='failed';
+        this.onChange(this.snapshot());return {correct:false,cell,status:this.status,hearts:this.hearts};
+      }
+      this.marks[cell]=2;
+      if(this.marks.filter(mark=>mark===2).length===this.level.size)this.status='ready';
+    }
+    this.onChange(this.snapshot());return {correct:true,cell,status:this.status,hearts:this.hearts};
+  }
+  // Validate persisted local drafts rather than trusting arbitrary browser JSON.
+  restoreLocal(draft){
+    if(!draft||!['playing','ready'].includes(this.status)||!Array.isArray(draft.marks)||draft.marks.length!==this.marks.length||
+      !draft.marks.every((v,i)=>[0,1,2].includes(v)&&(v!==2||this.solution.has(i)))||
+      !Number.isInteger(draft.hearts)||draft.hearts<0||draft.hearts>3)return false;
+    this.marks=[...draft.marks];this.hearts=Math.min(this.hearts,draft.hearts);
+    this.status=!this.hearts?'failed':this.marks.filter(v=>v===2).length===this.level.size?'ready':'playing';
+    this.onChange(this.snapshot());return true;
+  }
 }
 // Single platform boundary for HTTP, auth bearer, and persistence (swap with wx APIs for Mini Program).
 const PlatformAdapter={
   getStorage(key){try{return localStorage.getItem('findcat:'+key)}catch{return null}},
   setStorage(key,value){try{localStorage.setItem('findcat:'+key,value)}catch{}},
   removeStorage(key){try{localStorage.removeItem('findcat:'+key)}catch{}},
-  async request(url,{method='GET',body,headers={}}={}){const token=this.getStorage('token');const res=await fetch(url,{method,headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});let data={};try{data=await res.json()}catch{}if(!res.ok){if(res.status===401){this.removeStorage('token');this.removeStorage('user')}throw new Error(data.error||`HTTP ${res.status}`)}return data;}
+  async request(url,{method='GET',body,headers={}}={}){const token=this.getStorage('token');const res=await fetch(url,{method,headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});let data={};try{data=await res.json()}catch{}if(!res.ok){if(res.status===401){this.removeStorage('token');this.removeStorage('user')}const error=new Error(data.error||`HTTP ${res.status}`);error.status=res.status;error.code=data.code;throw error}return data;}
 };
-const UI={mode:'normal',practiceLevel:1,movePending:0,normalMarks:null,completionResult:null,level:1,size:4,engine:null,account:null,config:null,offset:0,rankOffset:0,lastTap:{cell:-1,time:0},gesture:null,toastTimer:null,timerHandle:null,completeLock:false,gameEpoch:0,modalEpoch:0,loading:false,cellErrors:new Map(),moveQueue:Promise.resolve(),lastClock:0};
+const UI={mode:'normal',practiceLevel:1,drafts:new Map(),completionResult:null,level:1,size:4,engine:null,account:null,config:null,offset:0,rankOffset:0,lastTap:{cell:-1,time:0},gesture:null,toastTimer:null,timerHandle:null,completeLock:false,gameEpoch:0,modalEpoch:0,loading:false,cellErrors:new Map(),lastClock:0};
 const $=id=>document.getElementById(id);const CAT='<svg class="cat-svg" viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#cat-full"/></svg>';
 const PALETTE=['#8CE052','#FFD43B','#F28C28','#E0435B','#F49AC2','#5CE1E6','#9B5DE5','#95A5A6','#2ECC71','#276749','#4DABF7'];
 function toast(text){const el=$('toast');clearTimeout(UI.toastTimer);el.textContent=String(text||'连接服务器失败，请稍后重试。');el.hidden=false;UI.toastTimer=setTimeout(()=>{el.hidden=true;UI.toastTimer=null},2600)}
@@ -163,8 +270,33 @@ function formatTime(ms){const sec=Math.floor(ms/1000);return `${String(Math.floo
 function gameApi(action, mode = UI.mode) {
   return mode === 'practice' ? '/api/admin/practice/' + action : '/api/game/' + action;
 }
+// Per-account, per-mode, per-run drafts. Storage/network stay outside GameEngine.
+function draftKey(mode=UI.mode){return `local-run:${UI.account?.id??'session'}:${mode}`;}
+function readStoredJson(key){
+  const value=PlatformAdapter.getStorage(key);
+  if(typeof value!=='string'||value.length>16384)return null;
+  try{return JSON.parse(value)}catch{return null}
+}
+function saveLocalRun(){
+  const e=UI.engine;if(!e?.run||!e.level||(UI.runAccountId!==undefined&&UI.runAccountId!==UI.account?.id))return;
+  const draft={version:1,runId:e.run.id,levelId:e.level.id,size:e.level.size,revision:e.revision??0,regions:e.level.regions.join(','),marks:[...e.marks],hearts:e.hearts};
+  const key=draftKey();UI.drafts.set(key,draft);
+  if(UI.account?.id)PlatformAdapter.setStorage(key,JSON.stringify(draft));
+}
+function restoreLocalRun(){
+  const e=UI.engine,key=draftKey(),draft=UI.drafts.get(key)||(UI.account?.id?readStoredJson(key):null);
+  // A legacy client's newer server revision wins over this browser's old local marks.
+  if(draft?.version===1&&draft.runId===e.run.id&&draft.levelId===e.level.id&&
+    draft.size===e.level.size&&draft.revision===(e.revision??0)&&draft.regions===e.level.regions.join(','))e.restoreLocal(draft);
+}
+async function loadSessionLevel(){
+  const session=UI.account?.id?readStoredJson(`active-mode:${UI.account.id}`):null;
+  const practice=UI.account?.isAdmin&&session?.mode==='practice'&&Number.isSafeInteger(session.levelId)&&session.levelId>0;
+  return loadLevel(false,{mode:practice?'practice':'normal',levelId:practice?session.levelId:1});
+}
+function markCell(cell,value){if(UI.loading)return;UI.engine.applyMark(cell,value);saveLocalRun();}
 async function loadLevel(restart = false, {mode = UI.mode, levelId = UI.practiceLevel} = {}) {
-  if (UI.loading || UI.movePending || UI.engine?.status === 'submitting') {
+  if (UI.loading || UI.engine?.status === 'submitting') {
     toast('正在同步本局，请稍候再切换。'); return false;
   }
   if (mode !== 'normal' && mode !== 'practice') throw new Error('无效的游戏模式');
@@ -172,14 +304,15 @@ async function loadLevel(restart = false, {mode = UI.mode, levelId = UI.practice
   UI.loading = true;
   const epoch = ++UI.gameEpoch;
   cancelGesture();
+  saveLocalRun();
   try {
     const body = mode === 'practice' ? {restart, levelId} : {restart};
     const data = await PlatformAdapter.request(gameApi('start', mode), {method: 'POST', body});
     if (epoch !== UI.gameEpoch) return false;
-    if (UI.mode === 'normal' && mode !== 'normal' && UI.engine?.run) {
-      UI.normalMarks = {runId: UI.engine.run.id, marks: [...UI.engine.marks]};
-    }
+    // Validate/solve before replacing the old board. No hidden answer is downloaded.
+    const answer=data.allComplete?null:GameEngine.prepare(data.level);
     UI.mode = mode;
+    if(UI.account?.id)PlatformAdapter.setStorage(`active-mode:${UI.account.id}`,JSON.stringify({mode,levelId:data.level?.id??1}));
     UI.completionResult = null;
     closeModal();
     UI.completeLock = false;
@@ -190,15 +323,12 @@ async function loadLevel(restart = false, {mode = UI.mode, levelId = UI.practice
       $('subrow').textContent = '当前题库已全部完成'; showAllComplete(); return true;
     }
     if (mode === 'practice') UI.practiceLevel = data.level.id;
-    UI.engine.load(data.level, data.run);
-    if (mode === 'normal' && UI.normalMarks?.runId === data.run.id) {
-      UI.normalMarks.marks.forEach((mark, i) => {if (mark === 1 && UI.engine.marks[i] === 0) UI.engine.marks[i] = 1;});
-      render(UI.engine.snapshot());
-    }
-    if (mode === 'normal') UI.normalMarks = null;
-    if (data.run.status === 'ready' || (mode === 'practice' && data.run.status === 'completed')) await finishLevel();
-    else if (data.run.status === 'failed') showFailed();
-
+    UI.runAccountId=UI.account?.id;
+    UI.engine.load(data.level, data.run,answer);
+    restoreLocalRun();saveLocalRun();startClock();
+    if (UI.engine.status === 'ready') await finishLevel();
+    else if(mode==='practice'&&UI.engine.status==='completed')showPracticeWin({levelId:data.level.id,elapsedMs:data.run.elapsedMs,nextLevelId:data.level.id<data.totalLevels?data.level.id+1:null});
+    else if (UI.engine.status === 'failed') showFailed();
     return true;
   } finally {
     if (epoch === UI.gameEpoch) UI.loading = false;
@@ -206,65 +336,33 @@ async function loadLevel(restart = false, {mode = UI.mode, levelId = UI.practice
 }
 
 async function move(cell, operation) {
-  if (UI.loading || !UI.engine?.run || !['playing', 'ready'].includes(UI.engine.status)) return;
-  const epoch = UI.gameEpoch;
-  const endpoint = gameApi('move');
-  UI.movePending++;
-  const payload = UI.engine.requestMove(cell, operation);
-  UI.engine.applyMark(cell, 3);
-  const perform = async () => {
-    if (epoch !== UI.gameEpoch) return;
-    let result;
-    // Retry with the exact request ID/revision: the server deduplicates requests
-    // whose response was lost, so a transient network failure cannot spend a heart twice.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        result = await PlatformAdapter.request(endpoint, { method: 'POST', body: payload });
-        break;
-      } catch (error) {
-        if (attempt === 2) throw error;
-        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
-      }
-    }
-    if (epoch !== UI.gameEpoch) return;
-    result.operation = operation;
-    if (operation === 'place' && !result.correct) flagCellError(cell);
-    else clearCellFeedback(cell);
-    UI.engine.acceptMove(result);
-    if (operation === 'place' && !result.correct) {
-      toast(`放错啦，剩余 ${result.run.hearts} 颗心`);
-      if (result.run.status === 'failed') showFailed();
-    } else if (result.run.status === 'ready') await finishLevel();
-  };
-  UI.moveQueue = UI.moveQueue.then(perform, perform).catch(async error => {
-    if (epoch !== UI.gameEpoch) return;
-    toast(error.message);
-    if (/过期|重新开始|已变化|已结束|锁定/.test(error.message)) {
-      UI.movePending=0; try { await loadLevel(false); } catch (reloadError) { showError(reloadError); }
-    } else {
-      // Re-read the server run to recover if an idempotent retry could not finish.
-      UI.movePending=0; try { await loadLevel(false); } catch { if (epoch === UI.gameEpoch) UI.engine.applyMark(cell, 0); }
-    }
-  });
-  return UI.moveQueue.finally(() => {if(epoch===UI.gameEpoch)UI.movePending=Math.max(0,UI.movePending-1);});
+  if(UI.loading||!UI.engine?.run)return;
+  const result=UI.engine.move(cell,operation);
+  if(!result)return;
+  if(operation==='place'&&!result.correct){flagCellError(cell);render(UI.engine.snapshot());toast(`放错啦，剩余 ${result.hearts} 颗心`);}
+  else clearCellFeedback(cell);
+  saveLocalRun();
+  if(result.status==='failed')showFailed();
+  else if(result.status==='ready')await finishLevel();
 }
 async function finishLevel() {
-  if (UI.completeLock || !UI.engine?.run) return;
+  if (UI.completeLock || !UI.engine?.run || !['ready','completed'].includes(UI.engine.status)) return;
   UI.completeLock = true;
   const mode = UI.mode, epoch = UI.gameEpoch;
+  cancelGesture();
   UI.engine.setStatus('submitting');
   const payload = { runId: UI.engine.run.id, levelId: UI.level, cats: UI.engine.marks.flatMap((mark, i) => mark === 2 ? [i] : []) };
   const submit = async () => {
     try {
-      const result = await PlatformAdapter.request(gameApi('complete',mode), { method: 'POST', body: payload });
-      if (epoch === UI.gameEpoch && UI.engine?.run?.id === payload.runId) {UI.engine.setStatus('completed');if(mode==='practice')showPracticeWin(result);else showWin(result);}
+      const result = await PlatformAdapter.request(gameApi('submit',mode), { method: 'POST', body: payload });
+      if (epoch === UI.gameEpoch && UI.engine?.run?.id === payload.runId) {UI.engine.setElapsed(result.elapsedMs);UI.engine.setStatus('completed');saveLocalRun();if(mode==='practice')showPracticeWin(result);else showWin(result);}
     } catch (error) {
       if (epoch !== UI.gameEpoch) return;
       UI.completeLock = false;
       UI.engine.setStatus('ready');
       toast(error.message);
       modal(mode==='practice'?'试关结果尚未确认':'成绩尚未确认', `<p>${esc(error.message)}。可以安全重试；服务器会避免重复记分。</p><button class="primary" id="retryComplete">重试提交成绩</button><button class="close" id="syncRun">同步本局</button>`);
-      $('retryComplete').onclick = submit;
+      $('retryComplete').onclick = () => finishLevel().catch(showError);
       $('syncRun').onclick = () => { closeModal(); loadLevel(false).catch(showError); };
     }
   };
@@ -315,14 +413,47 @@ async function githubLogin(){try{const secret=browserSecret(),digest=await crypt
 async function finishOAuth(){const p=new URLSearchParams(location.hash.slice(1));if(p.has('auth_error')){history.replaceState(null,'',location.pathname);toast(p.get('auth_error'));return}if(!p.has('login_ticket'))return;const ticket=p.get('login_ticket');history.replaceState(null,'',location.pathname);try{const d=await PlatformAdapter.request('/api/auth/exchange',{method:'POST',body:{ticket,browserSecret:browserSecret()}});PlatformAdapter.setStorage('token',d.accessToken);await boot()}catch(e){showError(e)}}
 async function guestLogin(){try{const name=prompt('本地测试昵称','测试猫友');if(name===null)return;const d=await PlatformAdapter.request('/api/auth/guest',{method:'POST',body:{username:name,guestId:guestId()}});PlatformAdapter.setStorage('token',d.accessToken);await initialize()}catch(e){showError(e)}}
 function renderAccount(user){UI.account=user;$('accountBtn').hidden=!!user&&!user.isGuest;$('accountBtn').textContent=user?.isGuest?'GitHub 登录':'GitHub 登录';$('account').hidden=!user;$('adminBtn').hidden=!user?.isAdmin;$('modeBtn').hidden=!user?.isAdmin;if(user){$('account').innerHTML=`${user.avatar_url?`<img class="avatar" src="${esc(user.avatar_url)}" alt="">`:'🐱'}<span class="username">${esc(user.username)}</span>`;$('account').title='点击退出登录';$('account').onclick=logout;}}
-async function logout(){UI.gameEpoch++;UI.mode='normal';UI.normalMarks=null;UI.completionResult=null;UI.movePending=0;UI.loading=false;UI.completeLock=false;clearCellFeedback();UI.engine.resetData();PlatformAdapter.removeStorage('token');PlatformAdapter.removeStorage('user');renderAccount(null);closeModal();await initialize()}
-async function initialize(){UI.config=await PlatformAdapter.request('/api/config');const token=PlatformAdapter.getStorage('token');if(!token){renderAccount(null);showLogin();return}try{const me=await PlatformAdapter.request('/api/me');renderAccount(me.user);await loadLevel(false)}catch(e){PlatformAdapter.removeStorage('token');renderAccount(null);showLogin()}}
+async function logout(){UI.gameEpoch++;UI.mode='normal';UI.drafts.clear();UI.completionResult=null;UI.loading=false;UI.completeLock=false;clearCellFeedback();UI.engine.resetData();PlatformAdapter.removeStorage('token');PlatformAdapter.removeStorage('user');renderAccount(null);closeModal();await initialize()}
+async function initialize(){
+  UI.config=await PlatformAdapter.request('/api/config');
+  if(!PlatformAdapter.getStorage('token')){renderAccount(null);showLogin();return}
+  let me;
+  try{me=await PlatformAdapter.request('/api/me')}catch(error){
+    if(error.status===401){renderAccount(null);showLogin();return}
+    throw error;
+  }
+  renderAccount(me.user);await loadSessionLevel();
+}
 function showLogin(){$('title').textContent='找猫';$('board').innerHTML='<div class="empty">登录后开始第一关</div>';hearts(0);$('progressText').textContent='0/0';$('progressFill').style.width='0';$('timer').textContent='00:00';$('subrow').textContent='猫猫已经准备好啦';}
 function pointerCell(e){const board=$('board'),rect=board.getBoundingClientRect(),style=getComputedStyle(board),pad=parseFloat(style.paddingLeft),gap=parseFloat(style.columnGap),inner=rect.width-2*pad,x=e.clientX-rect.left-pad,y=e.clientY-rect.top-pad,size=(inner-gap*(UI.size-1))/UI.size,c=Math.floor(x/(size+gap)),r=Math.floor(y/(size+gap));if(r<0||c<0||r>=UI.size||c>=UI.size||x%(size+gap)>size||y%(size+gap)>size)return -1;return r*UI.size+c}
-async function singleTap(cell){const mark=UI.engine.marks[cell];if(mark===2){await move(cell,'remove');return}UI.engine.applyMark(cell,mark===1?0:1)}
-function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('modeBtn').onclick=showMode;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false,{mode:UI.mode,levelId:Number(b.dataset.open)}).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(UI.loading||cell<0||!['playing','ready'].includes(UI.engine?.status))return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)UI.engine.applyMark(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)UI.engine.applyMark(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',()=>{if(!UI.engine?.run||UI.engine.status!=='playing')return;if(document.hidden){clearInterval(UI.timerHandle);UI.timerHandle=null}else startClock()});}
-function startClock(){clearInterval(UI.timerHandle);UI.lastClock=performance.now();UI.timerHandle=setInterval(()=>{if(UI.engine?.run&&UI.engine.status==='playing'){const now=performance.now();UI.engine.setElapsed(UI.engine.elapsedMs+Math.max(0,now-UI.lastClock));UI.lastClock=now;$('timer').textContent=formatTime(UI.engine.elapsedMs)}},250)}
-async function boot(){UI.engine=new GameEngine(render);bind();UI.config=await PlatformAdapter.request('/api/config');const hashParams=new URLSearchParams(location.hash.slice(1));if(hashParams.has('login_ticket')||hashParams.has('auth_error'))return finishOAuth();const token=PlatformAdapter.getStorage('token');if(token){try{const me=await PlatformAdapter.request('/api/me');renderAccount(me.user);await loadLevel(false);startClock();return}catch{PlatformAdapter.removeStorage('token')}}if(UI.config.guestLogin){try{const d=await PlatformAdapter.request('/api/auth/guest',{method:'POST',body:{username:'本地猫友',guestId:guestId()}});PlatformAdapter.setStorage('token',d.accessToken);renderAccount(d.user);await loadLevel(false);startClock();return}catch(e){showError(e)}}renderAccount(null);showLogin()}
+async function singleTap(cell){const mark=UI.engine.marks[cell];if(mark===2)return;markCell(cell,mark===1?0:1)}
+function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('modeBtn').onclick=showMode;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false,{mode:UI.mode,levelId:Number(b.dataset.open)}).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(UI.loading||cell<0||UI.engine?.status!=='playing')return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)markCell(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)markCell(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',handleVisibility);}
+// Display follows server wall time, including hidden-tab time; the server owns scoring.
+function updateClock(){
+  if(UI.engine?.run&&UI.engine.status==='playing'){
+    const now=performance.now();UI.engine.setElapsed(UI.engine.elapsedMs+Math.max(0,now-UI.lastClock));UI.lastClock=now;
+    $('timer').textContent=formatTime(UI.engine.elapsedMs);
+  }
+}
+function startClock(){
+  clearInterval(UI.timerHandle);UI.timerHandle=null;UI.lastClock=performance.now();
+  if(!document.hidden&&UI.engine?.run&&UI.engine.status==='playing')UI.timerHandle=setInterval(updateClock,250);
+}
+function handleVisibility(){
+  updateClock();
+  if(document.hidden){clearInterval(UI.timerHandle);UI.timerHandle=null}else startClock();
+}
+async function boot(){
+  UI.engine=new GameEngine(render);bind();UI.config=await PlatformAdapter.request('/api/config');
+  const hashParams=new URLSearchParams(location.hash.slice(1));
+  if(hashParams.has('login_ticket')||hashParams.has('auth_error'))return finishOAuth();
+  if(PlatformAdapter.getStorage('token'))return initialize();
+  if(UI.config.guestLogin){
+    const d=await PlatformAdapter.request('/api/auth/guest',{method:'POST',body:{username:'本地猫友',guestId:guestId()}});
+    PlatformAdapter.setStorage('token',d.accessToken);renderAccount(d.user);await loadSessionLevel();return;
+  }
+  renderAccount(null);showLogin();
+}
 boot().catch(showError);
 </script>
 </body></html>

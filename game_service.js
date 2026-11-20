@@ -4,6 +4,24 @@ const { transaction } = require('./db');
 class AppError extends Error { constructor(status,message,code='REQUEST_ERROR'){super(message);this.status=status;this.code=code;} }
 function assert(ok,status,message,code){if(!ok)throw new AppError(status,message,code);}
 function int(value,min,max,label){assert(Number.isSafeInteger(value)&&value>=min&&value<=max,400,`${label}无效`);return value;}
+// Submission validates a complete local board, independently of legacy move state.
+function submissionInput(input) {
+  assert(input && typeof input === 'object' && !Array.isArray(input), 400, '请求体必须为 JSON 对象');
+  const { runId, levelId, cats } = input;
+  assert(typeof runId === 'string' && runId.length > 0 && runId.length <= 64, 400, '局次无效');
+  int(levelId, 1, 2147483647, '关卡');
+  assert(Array.isArray(cats) && cats.length <= 11 && cats.every(Number.isSafeInteger), 400, '猫坐标无效');
+  return { runId, levelId, cats };
+}
+function submissionCats(cats, level) {
+  assert(level, 404, '关卡不存在', 'LEVEL_NOT_FOUND');
+  assert(cats.length === level.size && new Set(cats).size === level.size, 400, '必须提交全部且不重复的猫坐标');
+  for (const cell of cats) int(cell, 0, level.size ** 2 - 1, '格子坐标');
+  const sorted = [...cats].sort((a, b) => a - b);
+  assert(JSON.stringify(sorted) === JSON.stringify(JSON.parse(level.solution).sort((a, b) => a - b)),
+    400, '答案不匹配');
+  return JSON.stringify(sorted);
+}
 class GameService {
   constructor(db,{runTtlHours=24,now=Date.now}={}){this.db=db;this.now=now;this.ttl=runTtlHours*3600000;}
   user(id){const u=this.db.prepare('SELECT id,auth_provider,username,avatar_url,current_level FROM users WHERE id=?').get(id);assert(u,401,'请重新登录','UNAUTHORIZED');return u;}
@@ -48,6 +66,37 @@ class GameService {
       this.db.prepare('INSERT INTO run_moves(run_id,request_id,cell,operation,result_json) VALUES(?,?,?,?,?)').run(runId,requestId,cell,operation,JSON.stringify(result));return result;
     });
   }
+  submit(userId, input = {}) {
+    const receivedAt = this.now();
+    const { runId, levelId, cats } = submissionInput(input);
+    return transaction(this.db, () => {
+      const user = this.user(userId);
+      const prior = this.db.prepare('SELECT elapsed_ms FROM completions WHERE user_id=? AND level_id=? AND run_id=?')
+        .get(userId, levelId, runId);
+      // A receipt outlives its run. Replaying it must not touch a newer run or advance again.
+      let run;
+      if (!prior) {
+        run = this.getRun(userId, runId);
+        assert(levelId === user.current_level && run.level_id === levelId,
+          403, '只能提交当前解锁关卡', 'LEVEL_LOCKED');
+        assert(run.expires_at > receivedAt, 409, '本局已过期，请重新开始', 'RUN_EXPIRED');
+        assert((run.status === 'playing' || run.status === 'ready') && run.hearts > 0,
+          409, run.status === 'failed' || !run.hearts ? '红心已用完，请重新开始' : '本局已结束', 'RUN_FINISHED');
+      }
+      const level = this.db.prepare('SELECT size,solution FROM levels WHERE id=?').get(levelId);
+      const storedCats = submissionCats(cats, level);
+      if (prior) return this.completionView(user, levelId, prior.elapsed_ms);
+      // Unlike complete(), submit() freezes time at this request, not the final legacy move.
+      const elapsed = Math.max(1, receivedAt - run.started_at);
+      this.db.prepare("UPDATE runs SET cats=?,finished_at=?,status='completed',revision=revision+1 WHERE id=?")
+        .run(storedCats, receivedAt, runId);
+      this.db.prepare('INSERT INTO completions(user_id,level_id,elapsed_ms,completed_at,run_id) VALUES(?,?,?,?,?)')
+        .run(userId, levelId, elapsed, receivedAt, runId);
+      this.db.prepare('UPDATE users SET current_level=current_level+1,updated_at=? WHERE id=? AND current_level=?')
+        .run(receivedAt, userId, levelId);
+      return this.completionView(this.user(userId), levelId, elapsed);
+    });
+  }
   complete(userId,{runId,levelId,cats}){
     int(levelId,1,2147483647,'关卡');assert(typeof runId==='string',400,'局次无效');
     assert(Array.isArray(cats)&&cats.length<=11&&cats.every(Number.isSafeInteger),400,'猫坐标无效');
@@ -79,4 +128,4 @@ class GameService {
   }
   leaderboard(offset=0,limit=50){int(offset,0,2147483647,'起始位置');int(limit,1,100,'每页数量');return {total:this.db.prepare("SELECT COUNT(*) AS n FROM users WHERE auth_provider!='guest'").get().n,rows:this.db.prepare("SELECT u.id,u.username,u.avatar_url AS avatarUrl,COUNT(c.level_id) AS cleared,COALESCE(SUM(c.elapsed_ms),0) AS totalMs FROM users u LEFT JOIN completions c ON c.user_id=u.id WHERE u.auth_provider!='guest' GROUP BY u.id ORDER BY cleared DESC,totalMs ASC,u.id ASC LIMIT ? OFFSET ?").all(limit,offset).map((r,i)=>({...r,rank:offset+i+1}))};}
 }
-module.exports={GameService,AppError,assert,int};
+module.exports={GameService,AppError,assert,int,submissionInput,submissionCats};

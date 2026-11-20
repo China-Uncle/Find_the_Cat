@@ -84,12 +84,14 @@ function makeApp(options={}){
   app.post('/api/game/start',auth,rate('start',30,60000,r=>r.user.id),(req,res)=>{assert(req.body.restart===undefined||typeof req.body.restart==='boolean',400,'restart 必须为布尔值');res.json(service.start(req.user.id,{restart:req.body.restart===true}));});
   app.post('/api/game/move',auth,rate('move',240,60000,r=>r.user.id),(req,res)=>res.json(service.move(req.user.id,req.body)));
   app.post('/api/game/complete',auth,rate('complete',30,60000,r=>r.user.id),(req,res)=>res.json(service.complete(req.user.id,req.body)));
+  app.post('/api/game/submit',auth,rate('submit',30,60000,r=>r.user.id),(req,res)=>res.json(service.submit(req.user.id,req.body)));
   app.get('/api/levels/:id/top3',(req,res)=>res.json({rows:service.top(Number(req.params.id))}));
   app.get('/api/leaderboard',rate('rank',120),(req,res)=>res.json(service.leaderboard(Number(req.query.offset??0),Number(req.query.limit??50))));
   function practiceAdmin(req,res,next){try{assert(admin(req.user),403,'仅 GitHub 管理员可操作');next();}catch(e){next(e);}}
   app.post('/api/admin/practice/start',auth,practiceAdmin,rate('practice-start',30,60000,r=>r.user.id),(req,res)=>res.json(practiceService.start(req.user.id,req.body)));
   app.post('/api/admin/practice/move',auth,practiceAdmin,rate('practice-move',240,60000,r=>r.user.id),(req,res)=>res.json(practiceService.move(req.user.id,req.body)));
   app.post('/api/admin/practice/complete',auth,practiceAdmin,rate('practice-complete',30,60000,r=>r.user.id),(req,res)=>res.json(practiceService.complete(req.user.id,req.body)));
+  app.post('/api/admin/practice/submit',auth,practiceAdmin,rate('practice-submit',30,60000,r=>r.user.id),(req,res)=>res.json(practiceService.submit(req.user.id,req.body)));
   function adminAuth(req,res,next){try{assert(admin(req.user),403,'仅 GitHub 管理员可操作');const supplied=req.get('x-admin-secret')||'',expected=env.ADMIN_SECRET||'';assert(expected.length>=24,503,'管理员密钥未配置或过短');const a=Buffer.from(hash(supplied)),b=Buffer.from(hash(expected));assert(supplied.length>0&&crypto.timingSafeEqual(a,b),403,'管理员密钥不正确');next();}catch(e){next(e);}}
   const workers=new Set();
   app.post('/api/admin/generate-levels',auth,rate('admin',10,3600000,r=>r.user.id),adminAuth,(req,res)=>{
