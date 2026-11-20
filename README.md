@@ -28,6 +28,7 @@ npm start
 | `server.js` | Express 路由、GitHub OAuth、Bearer JWT、管理员鉴权 |
 | `public/index.html` | CSS、SVG、`GameEngine`、`PlatformAdapter`、触控坐标和 UI |
 | `scripts/setup_env.js` | 无覆盖安全初始化配置 |
+| `scripts/audit_levels.js` | 只读遍历现有题库，验证唯一解、连通性、答案和指纹去重 |
 | `tests/` | 算法、数据库、业务与前端逻辑回归 |
 | `docs/legacy-standalone.html` | 原单文件版本备份 |
 
@@ -120,3 +121,14 @@ npm test
 ```
 
 测试使用临时 SQLite，不会写入正式题库。纯算法/业务测试无需第三方依赖；HTTP 集成测试需要先 `npm install`。真实 GitHub 端到端登录需要有效 OAuth App 和可联网的部署环境，单元测试只模拟上游响应，不能替代真实授权验收。
+
+## 已有题库全量核验（只读）
+
+```bash
+# 默认使用 .env / DATABASE_PATH；不指定则读取 data/cats.sqlite
+node scripts/audit_levels.js
+# 指定线上库并保存逐关报告（只读连接，不运行建表、不改关卡或玩家数据）
+node scripts/audit_levels.js /opt/find-the-cat/data/cats.sqlite --json > /tmp/find-cat-audit.json
+```
+
+审计不把已有答案作为求解前提：每关从空盘开始精确 MRV 搜索，发现第二解即判失败；同时检查区域四邻接连通、存储答案及地图指纹，重新计算旋转/镜像/颜色重命名归一化指纹做同尺寸全局去重。所有关卡均检查完成才汇总，进程退出码 `0` 表示全部通过，`1` 表示异常或无法完成。发现异常只报告，不自动删除、重排或覆盖运营中的关卡；先备份再评估修复，以保护玩家进度。
