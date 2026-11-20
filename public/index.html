@@ -36,7 +36,7 @@
 <symbol id="heart" viewBox="0 0 24 24"><path fill="currentColor" d="M12 21s-9-5.7-9-12a5 5 0 0 1 9-3.1A5 5 0 0 1 21 9c0 6.3-9 12-9 12Z"/></symbol>
 </defs></svg>
 <div class="app">
-<header class="topbar"><div class="brand"><svg><use href="#cat"/></svg><span>FIND THE CAT</span></div><div><div class="title" id="title">第 1 关</div><div class="hearts" id="hearts" aria-label="剩余三颗心"></div></div><nav class="nav"><button id="accountBtn">GitHub 登录</button><div class="account" id="account" hidden></div><button id="levelsBtn">关卡列表</button><button id="rankBtn">全服总榜</button><button id="adminBtn" class="admin" hidden>＋ 扩展题库</button></nav></header>
+<header class="topbar"><div class="brand"><svg><use href="#cat"/></svg><span>FIND THE CAT</span></div><div><div class="title" id="title">第 1 关</div><div class="hearts" id="hearts" aria-label="剩余三颗心"></div></div><nav class="nav"><button id="accountBtn">GitHub 登录</button><div class="account" id="account" hidden></div><button id="levelsBtn">关卡列表</button><button id="rankBtn">全服总榜</button><button id="modeBtn" class="admin" hidden>模式：正常</button><button id="adminBtn" class="admin" hidden>＋ 扩展题库</button></nav></header>
 <section class="legend" aria-label="游戏规则"><div class="legend-item"><div class="mini" id="legendRegion"></div><div class="legend-copy">一种颜色一只猫<small>每个色块恰好一只</small></div></div><div class="legend-item"><div class="mini" id="legendLines"></div><div class="legend-copy">每行每列仅一只<small>横竖各有一只猫</small></div></div><div class="legend-item"><div class="mini" id="legendNear"></div><div class="legend-copy">猫咪不能接触<small>包括斜角也不行</small></div></div></section>
 <section class="status"><div class="progress-wrap"><svg class="progress-cat"><use href="#cat"/></svg><div class="progress"><div class="progress-fill" id="progressFill"></div></div><span class="progress-text" id="progressText">0/4</span></div><div class="timer"><svg><use href="#clock"/></svg><span>用时：<b id="timer">00:00</b></span></div><button class="restart" id="restart">重新开始</button></section>
 <main class="play"><div class="board-frame"><div class="board" id="board" role="grid" aria-label="找猫棋盘"></div></div><div class="subrow" id="subrow">单击标记 × · 双击找猫 · 拖动连续标记</div></main>
@@ -63,7 +63,7 @@ const PlatformAdapter={
   removeStorage(key){try{localStorage.removeItem('findcat:'+key)}catch{}},
   async request(url,{method='GET',body,headers={}}={}){const token=this.getStorage('token');const res=await fetch(url,{method,headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...headers},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});let data={};try{data=await res.json()}catch{}if(!res.ok){if(res.status===401){this.removeStorage('token');this.removeStorage('user')}throw new Error(data.error||`HTTP ${res.status}`)}return data;}
 };
-const UI={level:1,size:4,engine:null,account:null,config:null,offset:0,rankOffset:0,lastTap:{cell:-1,time:0},gesture:null,toastTimer:null,timerHandle:null,completeLock:false,gameEpoch:0,modalEpoch:0,loading:false,cellErrors:new Map(),moveQueue:Promise.resolve(),lastClock:0};
+const UI={mode:'normal',practiceLevel:1,movePending:0,normalMarks:null,level:1,size:4,engine:null,account:null,config:null,offset:0,rankOffset:0,lastTap:{cell:-1,time:0},gesture:null,toastTimer:null,timerHandle:null,completeLock:false,gameEpoch:0,modalEpoch:0,loading:false,cellErrors:new Map(),moveQueue:Promise.resolve(),lastClock:0};
 const $=id=>document.getElementById(id);const CAT='<svg class="cat-svg" viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><use href="#cat-full"/></svg>';
 const PALETTE=['#8CE052','#FFD43B','#F28C28','#E0435B','#F49AC2','#5CE1E6','#9B5DE5','#95A5A6','#2ECC71','#276749','#4DABF7'];
 function toast(text){const el=$('toast');clearTimeout(UI.toastTimer);el.textContent=String(text||'连接服务器失败，请稍后重试。');el.hidden=false;UI.toastTimer=setTimeout(()=>{el.hidden=true;UI.toastTimer=null},2600)}
@@ -72,7 +72,7 @@ function modal(title,body){UI.modalEpoch++;cancelGesture();$('modal').innerHTML=
 function closeModal(){UI.modalEpoch++;$('modal').replaceChildren()}
 function hearts(n){$('hearts').innerHTML=Array.from({length:3},(_,i)=>`<svg class="heart${i>=n?' lost':''}" aria-hidden="true"><use href="#heart"/></svg>`).join('');$('hearts').setAttribute('aria-label',`剩余 ${n} 颗心`)}
 function renderLegend(){const cat='<svg class="legend-cat" aria-hidden="true"><use href="#cat"/></svg>';const make=fn=>Array.from({length:9},(_,i)=>`<i class="${fn(i)}">${fn(i).includes('cross')?'×':fn(i)==='cat'?'': ''}${fn(i)==='cat'?cat:''}</i>`).join('');$('legendRegion').innerHTML=make(i=>[0,1,2,3,4,6].includes(i)?i===4?'cat':'zone': '');$('legendLines').innerHTML=make(i=>i===1?'cat':[0,2,4,7].includes(i)?'cross':'');$('legendNear').innerHTML=make(i=>i===4?'cat':'cross')}
-function render(s){if(!s.level)return;UI.level=s.level.id;UI.size=s.level.size;$('title').textContent=`第 ${UI.level} 关`;hearts(s.hearts);const count=s.marks.filter(v=>v===2).length,n=s.level.size;$('progressText').textContent=`${count}/${n}`;$('progressFill').style.width=`${count/n*100}%`;$('timer').textContent=formatTime(s.elapsedMs);const board=$('board');board.style.setProperty('--n',n);const previousCats=new Set(Array.from(board.querySelectorAll('.cell.cat'),node=>Number(node.dataset.cell)));board.innerHTML='';s.level.regions.forEach((region,i)=>{const cell=document.createElement('button');cell.className='cell'+(s.marks[i]===2?' cat':'')+(s.marks[i]===3?' pending':'')+(s.marks[i]===2&&!previousCats.has(i)?' cat-pop':'');if(UI.cellErrors.has(i)){cell.classList.add('error');cell.setAttribute('aria-invalid','true')}cell.dataset.cell=i;cell.setAttribute('role','gridcell');cell.setAttribute('aria-label',`第${Math.floor(i/n)+1}行第${i%n+1}列，色块${region+1}${s.marks[i]===2?'，猫':s.marks[i]===1?'，排除':''}`);cell.style.setProperty('--color',PALETTE[region]);cell.innerHTML=s.marks[i]===2?CAT:s.marks[i]===1?'<span class="x" aria-hidden="true">×</span>':'';board.append(cell)});requestAnimationFrame(fitBoard);$('subrow').textContent=s.status==='submitting'?'正在核验成绩…':s.status==='failed'?'三颗心用完了，重新开始再试一次。':s.status==='completed'?'本关已完成。':'单击标记 × · 双击找猫 · 拖动连续标记';$('restart').disabled=false}
+function render(s){if(!s.level)return;UI.level=s.level.id;UI.size=s.level.size;$('title').textContent=`${UI.mode==='practice'?'试关 · ':''}第 ${UI.level} 关`;$('modeBtn').textContent=UI.mode==='practice'?'模式：试关':'模式：正常';hearts(s.hearts);const count=s.marks.filter(v=>v===2).length,n=s.level.size;$('progressText').textContent=`${count}/${n}`;$('progressFill').style.width=`${count/n*100}%`;$('timer').textContent=formatTime(s.elapsedMs);const board=$('board');board.style.setProperty('--n',n);const previousCats=new Set(Array.from(board.querySelectorAll('.cell.cat'),node=>Number(node.dataset.cell)));board.innerHTML='';s.level.regions.forEach((region,i)=>{const cell=document.createElement('button');cell.className='cell'+(s.marks[i]===2?' cat':'')+(s.marks[i]===3?' pending':'')+(s.marks[i]===2&&!previousCats.has(i)?' cat-pop':'');if(UI.cellErrors.has(i)){cell.classList.add('error');cell.setAttribute('aria-invalid','true')}cell.dataset.cell=i;cell.setAttribute('role','gridcell');cell.setAttribute('aria-label',`第${Math.floor(i/n)+1}行第${i%n+1}列，色块${region+1}${s.marks[i]===2?'，猫':s.marks[i]===1?'，排除':''}`);cell.style.setProperty('--color',PALETTE[region]);cell.innerHTML=s.marks[i]===2?CAT:s.marks[i]===1?'<span class="x" aria-hidden="true">×</span>':'';board.append(cell)});requestAnimationFrame(fitBoard);$('subrow').textContent=s.status==='submitting'?'正在核验成绩…':s.status==='failed'?'三颗心用完了，重新开始再试一次。':s.status==='completed'?'本关已完成。':(UI.mode==='practice'?'管理员试关 · 不计榜、不改进度':'单击标记 × · 双击找猫 · 拖动连续标记');$('restart').disabled=false}
 // Transient view feedback survives board re-renders, without entering the portable game state.
 function clearCellFeedback(cell) {
   const clear = index => {
@@ -123,36 +123,66 @@ function fitBoard() {
 }
 
 function formatTime(ms){const sec=Math.floor(ms/1000);return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`}
-async function loadLevel(restart = false) {
-  if (UI.loading) return;
+// Separate server endpoints and tables prevent practice from becoming a scoring bypass.
+function gameApi(action, mode = UI.mode) {
+  return mode === 'practice' ? '/api/admin/practice/' + action : '/api/game/' + action;
+}
+async function loadLevel(restart = false, {mode = UI.mode, levelId = UI.practiceLevel} = {}) {
+  if (UI.loading || UI.movePending || UI.engine?.status === 'submitting') {
+    toast('正在同步本局，请稍候再切换。'); return false;
+  }
+  if (mode !== 'normal' && mode !== 'practice') throw new Error('无效的游戏模式');
+  if (mode === 'practice' && !UI.account?.isAdmin) throw new Error('仅管理员可试关');
   UI.loading = true;
   const epoch = ++UI.gameEpoch;
-  UI.completeLock = false;
-  clearCellFeedback();
   cancelGesture();
   try {
-    const data = await PlatformAdapter.request('/api/game/start', { method: 'POST', body: { restart } });
-    if (epoch !== UI.gameEpoch) return;
-    if (data.allComplete) { showAllComplete(); return; }
+    const body = mode === 'practice' ? {restart, levelId} : {restart};
+    const data = await PlatformAdapter.request(gameApi('start', mode), {method: 'POST', body});
+    if (epoch !== UI.gameEpoch) return false;
+    if (UI.mode === 'normal' && mode !== 'normal' && UI.engine?.run) {
+      UI.normalMarks = {runId: UI.engine.run.id, marks: [...UI.engine.marks]};
+    }
+    UI.mode = mode;
+    closeModal();
+    UI.completeLock = false;
+    clearCellFeedback();
+    $('modeBtn').textContent = mode === 'practice' ? '模式：试关' : '模式：正常';
+    if (data.allComplete) {
+      UI.engine.resetData(); showLogin(); $('title').textContent = '全部通关';
+      $('subrow').textContent = '当前题库已全部完成'; showAllComplete(); return true;
+    }
+    if (mode === 'practice') UI.practiceLevel = data.level.id;
     UI.engine.load(data.level, data.run);
+    if (mode === 'normal' && UI.normalMarks?.runId === data.run.id) {
+      UI.normalMarks.marks.forEach((mark, i) => {if (mark === 1 && UI.engine.marks[i] === 0) UI.engine.marks[i] = 1;});
+      render(UI.engine.snapshot());
+    }
+    if (mode === 'normal') UI.normalMarks = null;
     if (data.run.status === 'ready') await finishLevel();
     else if (data.run.status === 'failed') showFailed();
+    else if (mode === 'practice' && data.run.status === 'completed') showPracticeWin({levelId:data.level.id,elapsedMs:data.run.elapsedMs});
+    return true;
   } finally {
     if (epoch === UI.gameEpoch) UI.loading = false;
   }
 }
+
 async function move(cell, operation) {
-  if (!UI.engine?.run || !['playing', 'ready'].includes(UI.engine.status)) return;
+  if (UI.loading || !UI.engine?.run || !['playing', 'ready'].includes(UI.engine.status)) return;
   const epoch = UI.gameEpoch;
+  const endpoint = gameApi('move');
+  UI.movePending++;
   const payload = UI.engine.requestMove(cell, operation);
   UI.engine.applyMark(cell, 3);
   const perform = async () => {
+    if (epoch !== UI.gameEpoch) return;
     let result;
     // Retry with the exact request ID/revision: the server deduplicates requests
     // whose response was lost, so a transient network failure cannot spend a heart twice.
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        result = await PlatformAdapter.request('/api/game/move', { method: 'POST', body: payload });
+        result = await PlatformAdapter.request(endpoint, { method: 'POST', body: payload });
         break;
       } catch (error) {
         if (attempt === 2) throw error;
@@ -173,28 +203,30 @@ async function move(cell, operation) {
     if (epoch !== UI.gameEpoch) return;
     toast(error.message);
     if (/过期|重新开始|已变化|已结束|锁定/.test(error.message)) {
-      try { await loadLevel(false); } catch (reloadError) { showError(reloadError); }
+      UI.movePending=0; try { await loadLevel(false); } catch (reloadError) { showError(reloadError); }
     } else {
       // Re-read the server run to recover if an idempotent retry could not finish.
-      try { await loadLevel(false); } catch { if (epoch === UI.gameEpoch) UI.engine.applyMark(cell, 0); }
+      UI.movePending=0; try { await loadLevel(false); } catch { if (epoch === UI.gameEpoch) UI.engine.applyMark(cell, 0); }
     }
   });
-  return UI.moveQueue;
+  return UI.moveQueue.finally(() => {if(epoch===UI.gameEpoch)UI.movePending=Math.max(0,UI.movePending-1);});
 }
 async function finishLevel() {
   if (UI.completeLock || !UI.engine?.run) return;
   UI.completeLock = true;
+  const mode = UI.mode, epoch = UI.gameEpoch;
   UI.engine.setStatus('submitting');
   const payload = { runId: UI.engine.run.id, levelId: UI.level, cats: UI.engine.marks.flatMap((mark, i) => mark === 2 ? [i] : []) };
   const submit = async () => {
     try {
-      const result = await PlatformAdapter.request('/api/game/complete', { method: 'POST', body: payload });
-      if (UI.engine?.run?.id === payload.runId) showWin(result);
+      const result = await PlatformAdapter.request(gameApi('complete',mode), { method: 'POST', body: payload });
+      if (epoch === UI.gameEpoch && UI.engine?.run?.id === payload.runId) {UI.engine.setStatus('completed');if(mode==='practice')showPracticeWin(result);else showWin(result);}
     } catch (error) {
+      if (epoch !== UI.gameEpoch) return;
       UI.completeLock = false;
       UI.engine.setStatus('ready');
       toast(error.message);
-      modal('成绩尚未确认', `<p>${esc(error.message)}。可以安全重试；服务器会避免重复记分。</p><button class="primary" id="retryComplete">重试提交成绩</button><button class="close" id="syncRun">同步本局</button>`);
+      modal(mode==='practice'?'试关结果尚未确认':'成绩尚未确认', `<p>${esc(error.message)}。可以安全重试；服务器会避免重复记分。</p><button class="primary" id="retryComplete">重试提交成绩</button><button class="close" id="syncRun">同步本局</button>`);
       $('retryComplete').onclick = submit;
       $('syncRun').onclick = () => { closeModal(); loadLevel(false).catch(showError); };
     }
@@ -206,7 +238,36 @@ async function showWin(result){const medals=['🥇','🥈','🥉'];const top=(re
 function showAllComplete(){modal('当前题库都找完啦！','<p>恭喜通关当前全部关卡！新关卡正在加紧生成中，敬请期待。刷新页面可检查题库更新。</p>')}
 function showError(e){toast(e?.message||'连接服务器失败，请稍后重试。')}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function showLevels(){try{const d=await PlatformAdapter.request(`/api/levels?offset=${UI.offset}&limit=50`);const rows=d.levels.map(l=>`<div class="row"><span>${l.status==='completed'?'✓':l.status==='current'?'🐾':'🔒'}</span><span>第 ${l.id} 关 <small>· ${l.size} × ${l.size}${l.elapsedMs?` · ${formatTime(l.elapsedMs)}`:''}</small></span><button ${l.status!=='current'?'disabled':''} data-open="${l.id}">${l.status==='current'?'继续':'已锁定'}</button></div>`).join('');modal(`关卡列表 · 共 ${d.totalLevels} 关`,`<div class="rows">${rows||'<div class="empty">题库正在准备</div>'}</div><div style="display:flex;gap:8px;margin-top:10px"><button class="close" id="levelsPrev" ${UI.offset===0?'disabled':''}>上一页</button><small style="margin:auto;color:#958a7f">${Math.min(UI.offset+1,d.totalLevels)}–${Math.min(UI.offset+50,d.totalLevels)} / ${d.totalLevels}</small><button class="close" id="levelsNext" ${UI.offset+50>=d.totalLevels?'disabled':''}>下一页</button></div>`);$('levelsPrev').onclick=()=>{UI.offset=Math.max(0,UI.offset-50);showLevels()};$('levelsNext').onclick=()=>{UI.offset+=50;showLevels()}}catch(e){showError(e)}}
+async function showLevels() {
+  const mode=UI.mode, epoch=UI.gameEpoch;
+  try {
+    const d=await PlatformAdapter.request(`/api/levels?offset=${UI.offset}&limit=50`);
+    if (epoch!==UI.gameEpoch||mode!==UI.mode) return;
+    const practice=mode==='practice';
+    const rows=d.levels.map(l=>`<div class="row"><span>${practice?'🐾':l.status==='completed'?'✓':l.status==='current'?'🐾':'🔒'}</span><span>第 ${l.id} 关 <small>· ${l.size} × ${l.size}${!practice&&l.elapsedMs?` · ${formatTime(l.elapsedMs)}`:''}</small></span><button ${!practice&&l.status!=='current'?'disabled':''} data-open="${l.id}">${practice?'试这一关':l.status==='current'?'继续':'已锁定'}</button></div>`).join('');
+    modal(`${practice?'管理员试关':'关卡列表'} · 共 ${d.totalLevels} 关`,`${practice?'<p>任选关卡，不计成绩，不影响正式闯关。</p>':''}<div class="rows">${rows||'<div class="empty">题库正在准备</div>'}</div><div style="display:flex;gap:8px;margin-top:10px"><button class="close" id="levelsPrev" ${UI.offset===0?'disabled':''}>上一页</button><small style="margin:auto;color:#958a7f">${Math.min(UI.offset+1,d.totalLevels)}–${Math.min(UI.offset+50,d.totalLevels)} / ${d.totalLevels}</small><button class="close" id="levelsNext" ${UI.offset+50>=d.totalLevels?'disabled':''}>下一页</button></div>`);
+    $('levelsPrev').onclick=()=>{UI.offset=Math.max(0,UI.offset-50);showLevels()};
+    $('levelsNext').onclick=()=>{UI.offset+=50;showLevels()};
+  } catch(e){showError(e)}
+}
+function showMode() {
+  if (!UI.account?.isAdmin) return;
+  modal('管理员模式',`<p>当前：<b>${UI.mode==='practice'?'试关模式':'正常闯关'}</b></p><p>正常闯关按顺序解锁、正常计榜。试关可任选前后关卡，三心判错，但不计榜、不改正式进度或题库。</p><p><small>正式局次计时不会因切换到试关而暂停，避免切换模式刷用时。</small></p><button class="primary" id="normalMode">返回正常闯关</button><label class="field">要试玩的关卡编号<input id="practiceLevel" type="number" min="1" step="1" value="${UI.practiceLevel}"></label><button class="primary" id="practiceMode">开始试关</button>`);
+  $('normalMode').onclick=()=>loadLevel(false,{mode:'normal'}).catch(showError);
+  $('practiceMode').onclick=async()=>{
+    const levelId=Number($('practiceLevel').value);
+    if(!Number.isSafeInteger(levelId)||levelId<1)return toast('请输入有效关卡编号');
+    try {await loadLevel(true,{mode:'practice',levelId});} catch(e){showError(e)}
+  };
+}
+function showPracticeWin(result) {
+  const next=result.nextLevelId;
+  modal(`试关完成 · 第 ${result.levelId} 关`,`<p>用时 <b>${formatTime(result.elapsedMs)}</b></p><p>仅供测试：没有写入排行榜，也没有改变正式关卡进度。</p>${next?'<button class="primary" id="practiceNext">试下一关</button>':''}<button class="primary" id="practiceAgain">重新试这一关</button><button class="close" id="practiceChoose">选择其他关卡 / 返回正常模式</button>`);
+  if(next)$('practiceNext').onclick=async()=>{try{await loadLevel(true,{mode:'practice',levelId:next});}catch(e){showError(e)}};
+  $('practiceAgain').onclick=async()=>{try{await loadLevel(true,{mode:'practice',levelId:result.levelId});}catch(e){showError(e)}};
+  $('practiceChoose').onclick=showMode;
+}
+
 async function showRank(){try{const d=await PlatformAdapter.request('/api/leaderboard?limit=100');const medals=['🥇','🥈','🥉'];const rows=d.rows.map(u=>`<div class="row leader-row"><span class="medal">${medals[u.rank-1]||u.rank}</span>${u.avatarUrl?`<img class="avatar" src="${esc(u.avatarUrl)}" alt="">`:'🐱'}<span>${esc(u.username)}</span><span><b>${u.cleared}</b> 关 · ${formatTime(u.totalMs)}</span></div>`).join('');modal('全服总榜',`<div class="rows">${rows||'<div class="empty">还没有公开成绩，来成为第一个上榜的猫友吧。</div>'}</div>`)}catch(e){showError(e)}}
 function showAdmin(){modal('扩展题库',`<p>追加关卡会在后台生成并自动去重。单次最多 1000 关；任务完成后关卡列表自动更新。</p><label class="field">追加数量<input id="adminCount" type="number" min="1" max="1000" value="50"></label><label class="field">管理员密钥<input id="adminSecret" type="password" autocomplete="current-password"></label><button class="primary" id="generate">开始生成</button><div id="jobProgress"></div>`);$('generate').onclick=startGeneration}
 async function startGeneration(){const count=Number($('adminCount').value),secret=$('adminSecret').value;if(!Number.isInteger(count)||count<1||count>1000)return toast('请输入 1–1000 的关卡数');$('generate').disabled=true;try{const {jobId}=await PlatformAdapter.request('/api/admin/generate-levels',{method:'POST',body:{count},headers:{'X-Admin-Secret':secret}});const poll=async()=>{try{const d=await PlatformAdapter.request('/api/admin/generation-jobs/'+encodeURIComponent(jobId));const j=d.job;$('jobProgress').textContent=`${j.created_count}/${j.requested} · 当前共 ${d.totalLevels} 关`;if(j.status==='done'){toast(`生成完成：第 ${j.start_level}–${j.end_level} 关`);$('generate').disabled=false;return}if(j.status==='failed'){toast(j.error||'生成失败');$('generate').disabled=false;return}setTimeout(poll,1000)}catch(e){toast(e.message);$('generate').disabled=false}};poll()}catch(e){$('generate').disabled=false;toast(e.message)}}
@@ -215,13 +276,13 @@ function browserSecret(){let s=PlatformAdapter.getStorage('browser-secret');if(!
 async function githubLogin(){try{const secret=browserSecret(),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret)),hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');const {url}=await PlatformAdapter.request('/api/auth/github/start?browser_hash='+hash);location.assign(url)}catch(e){showError(e)}}
 async function finishOAuth(){const p=new URLSearchParams(location.hash.slice(1));if(p.has('auth_error')){history.replaceState(null,'',location.pathname);toast(p.get('auth_error'));return}if(!p.has('login_ticket'))return;const ticket=p.get('login_ticket');history.replaceState(null,'',location.pathname);try{const d=await PlatformAdapter.request('/api/auth/exchange',{method:'POST',body:{ticket,browserSecret:browserSecret()}});PlatformAdapter.setStorage('token',d.accessToken);await boot()}catch(e){showError(e)}}
 async function guestLogin(){try{const name=prompt('本地测试昵称','测试猫友');if(name===null)return;const d=await PlatformAdapter.request('/api/auth/guest',{method:'POST',body:{username:name,guestId:guestId()}});PlatformAdapter.setStorage('token',d.accessToken);await initialize()}catch(e){showError(e)}}
-function renderAccount(user){UI.account=user;$('accountBtn').hidden=!!user&&!user.isGuest;$('accountBtn').textContent=user?.isGuest?'GitHub 登录':'GitHub 登录';$('account').hidden=!user;$('adminBtn').hidden=!user?.isAdmin;if(user){$('account').innerHTML=`${user.avatar_url?`<img class="avatar" src="${esc(user.avatar_url)}" alt="">`:'🐱'}<span class="username">${esc(user.username)}</span>`;$('account').title='点击退出登录';$('account').onclick=logout;}}
-async function logout(){PlatformAdapter.removeStorage('token');PlatformAdapter.removeStorage('user');renderAccount(null);closeModal();await initialize()}
+function renderAccount(user){UI.account=user;$('accountBtn').hidden=!!user&&!user.isGuest;$('accountBtn').textContent=user?.isGuest?'GitHub 登录':'GitHub 登录';$('account').hidden=!user;$('adminBtn').hidden=!user?.isAdmin;$('modeBtn').hidden=!user?.isAdmin;if(user){$('account').innerHTML=`${user.avatar_url?`<img class="avatar" src="${esc(user.avatar_url)}" alt="">`:'🐱'}<span class="username">${esc(user.username)}</span>`;$('account').title='点击退出登录';$('account').onclick=logout;}}
+async function logout(){UI.gameEpoch++;UI.mode='normal';UI.normalMarks=null;UI.movePending=0;UI.loading=false;UI.completeLock=false;clearCellFeedback();UI.engine.resetData();PlatformAdapter.removeStorage('token');PlatformAdapter.removeStorage('user');renderAccount(null);closeModal();await initialize()}
 async function initialize(){UI.config=await PlatformAdapter.request('/api/config');const token=PlatformAdapter.getStorage('token');if(!token){renderAccount(null);showLogin();return}try{const me=await PlatformAdapter.request('/api/me');renderAccount(me.user);await loadLevel(false)}catch(e){PlatformAdapter.removeStorage('token');renderAccount(null);showLogin()}}
 function showLogin(){$('title').textContent='找猫';$('board').innerHTML='<div class="empty">登录后开始第一关</div>';hearts(0);$('progressText').textContent='0/0';$('progressFill').style.width='0';$('timer').textContent='00:00';$('subrow').textContent='猫猫已经准备好啦';}
 function pointerCell(e){const board=$('board'),rect=board.getBoundingClientRect(),style=getComputedStyle(board),pad=parseFloat(style.paddingLeft),gap=parseFloat(style.columnGap),inner=rect.width-2*pad,x=e.clientX-rect.left-pad,y=e.clientY-rect.top-pad,size=(inner-gap*(UI.size-1))/UI.size,c=Math.floor(x/(size+gap)),r=Math.floor(y/(size+gap));if(r<0||c<0||r>=UI.size||c>=UI.size||x%(size+gap)>size||y%(size+gap)>size)return -1;return r*UI.size+c}
 async function singleTap(cell){const mark=UI.engine.marks[cell];if(mark===2){await move(cell,'remove');return}UI.engine.applyMark(cell,mark===1?0:1)}
-function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(cell<0||!['playing','ready'].includes(UI.engine?.status))return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)UI.engine.applyMark(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)UI.engine.applyMark(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',()=>{if(!UI.engine?.run||UI.engine.status!=='playing')return;if(document.hidden){clearInterval(UI.timerHandle);UI.timerHandle=null}else startClock()});}
+function bind(){renderLegend();$('accountBtn').onclick=()=>UI.config?.githubLogin?githubLogin():guestLogin();$('levelsBtn').onclick=showLevels;$('rankBtn').onclick=showRank;$('modeBtn').onclick=showMode;$('adminBtn').onclick=showAdmin;$('restart').onclick=()=>loadLevel(true).catch(showError);$('modal').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b&&!b.disabled){closeModal();loadLevel(false,{mode:UI.mode,levelId:Number(b.dataset.open)}).catch(showError)}});const board=$('board');board.addEventListener('contextmenu',e=>e.preventDefault());board.addEventListener('pointerdown',e=>{const cell=pointerCell(e);if(UI.loading||cell<0||!['playing','ready'].includes(UI.engine?.status))return;e.preventDefault();board.setPointerCapture(e.pointerId);UI.gesture={id:e.pointerId,start:cell,last:cell,x:e.clientX,y:e.clientY,drag:false,erase:UI.engine.marks[cell]===1,visited:new Set()}});board.addEventListener('pointermove',e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;const cell=pointerCell(e);if(cell<0)return;if(!g.drag&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>7)g.drag=true;if(g.drag&&cell!==g.last){const step=g.erase?0:1;if(UI.engine.marks[cell]!==2)UI.engine.applyMark(cell,step);g.visited.add(cell);g.last=cell}});const up=e=>{const g=UI.gesture;if(!g||g.id!==e.pointerId)return;UI.gesture=null;if(g.drag){if(UI.engine.marks[g.start]!==2)UI.engine.applyMark(g.start,g.erase?0:1);return}const now=performance.now();if(UI.lastTap.cell===g.start&&now-UI.lastTap.time<310){UI.lastTap={cell:-1,time:0};if(UI.engine.marks[g.start]===2)move(g.start,'remove');else move(g.start,'place')}else{UI.lastTap={cell:g.start,time:now};singleTap(g.start)}};board.addEventListener('pointerup',up);board.addEventListener('pointercancel',()=>UI.gesture=null);window.addEventListener('resize',fitBoard);if(typeof ResizeObserver!=='undefined'){UI.layoutObserver=new ResizeObserver(fitBoard);UI.layoutObserver.observe(document.querySelector('.play'));}document.addEventListener('visibilitychange',()=>{if(!UI.engine?.run||UI.engine.status!=='playing')return;if(document.hidden){clearInterval(UI.timerHandle);UI.timerHandle=null}else startClock()});}
 function startClock(){clearInterval(UI.timerHandle);UI.lastClock=performance.now();UI.timerHandle=setInterval(()=>{if(UI.engine?.run&&UI.engine.status==='playing'){const now=performance.now();UI.engine.setElapsed(UI.engine.elapsedMs+Math.max(0,now-UI.lastClock));UI.lastClock=now;$('timer').textContent=formatTime(UI.engine.elapsedMs)}},250)}
 async function boot(){UI.engine=new GameEngine(render);bind();UI.config=await PlatformAdapter.request('/api/config');const hashParams=new URLSearchParams(location.hash.slice(1));if(hashParams.has('login_ticket')||hashParams.has('auth_error'))return finishOAuth();const token=PlatformAdapter.getStorage('token');if(token){try{const me=await PlatformAdapter.request('/api/me');renderAccount(me.user);await loadLevel(false);startClock();return}catch{PlatformAdapter.removeStorage('token')}}if(UI.config.guestLogin){try{const d=await PlatformAdapter.request('/api/auth/guest',{method:'POST',body:{username:'本地猫友',guestId:guestId()}});PlatformAdapter.setStorage('token',d.accessToken);renderAccount(d.user);await loadLevel(false);startClock();return}catch(e){showError(e)}}renderAccount(null);showLogin()}
 boot().catch(showError);

@@ -8,6 +8,7 @@ const path=require('node:path');
 const {Worker}=require('node:worker_threads');
 const {openDatabase,resolveDatabase,transaction}=require('./db');
 const {GameService,AppError,assert}=require('./game_service');
+const {PracticeService}=require('./practice_service');
 const {createGenerationJob}=require('./level_generator');
 function makeApp(options={}){
   const env={...process.env,...options.env},production=env.NODE_ENV==='production';
@@ -20,6 +21,7 @@ function makeApp(options={}){
   if(!/^\/(?!\/)[A-Za-z0-9/_-]+$/.test(callbackPath)||callbackPath.includes('//')||callbackPath.split('/').some(part=>part==='.'||part==='..'))throw new Error('GITHUB_CALLBACK_PATH 必须是以 / 开头的安全路径');
   const callbackUrl=base+callbackPath,allowGuest=!production&&env.ALLOW_GUEST_LOGIN==='true';
   const db=options.db||openDatabase(env.DATABASE_PATH),service=new GameService(db,{runTtlHours:Number(env.RUN_TTL_HOURS)||24});
+  const practiceService=new PracticeService(db,{runTtlHours:Number(env.RUN_TTL_HOURS)||24});
   const app=express();app.disable('x-powered-by');
   const hops=Number(env.TRUST_PROXY_HOPS||0);if(!Number.isInteger(hops)||hops<0||hops>5)throw new Error('TRUST_PROXY_HOPS 必须为 0–5');app.set('trust proxy',hops);
   app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'unsafe-inline'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','https://avatars.githubusercontent.com'],connectSrc:["'self'"],fontSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],...(production?{}:{upgradeInsecureRequests:null})}},hsts:production?{maxAge:31536000,includeSubDomains:false}:false,referrerPolicy:{policy:'no-referrer'}}));
@@ -30,10 +32,13 @@ function makeApp(options={}){
   const buckets=new Map();
   function key(req){return req.user?String(req.user.id):String(req.ip||'unknown');}
   function rate(label,max,ms=60000,keyFn=key){return (req,res,next)=>{const id=label+':'+keyFn(req),now=Date.now();let b=buckets.get(id);if(!b||b.until<now){b={count:0,until:now+ms};buckets.set(id,b);}if(++b.count>max){res.set('Retry-After',Math.ceil((b.until-now)/1000));return next(new AppError(429,'操作太快，请稍后再试'));}next();};}
-  const cleanup=setInterval(()=>{const now=Date.now();for(const[k,v]of buckets)if(v.until<now)buckets.delete(k);db.prepare('DELETE FROM oauth_flows WHERE expires_at<?').run(now);db.prepare('DELETE FROM login_tickets WHERE expires_at<?').run(now);},60000);cleanup.unref();
+  const cleanup=setInterval(()=>{const now=Date.now();for(const[k,v]of buckets)if(v.until<now)buckets.delete(k);db.prepare('DELETE FROM oauth_flows WHERE expires_at<?').run(now);db.prepare('DELETE FROM login_tickets WHERE expires_at<?').run(now);db.prepare('DELETE FROM practice_runs WHERE expires_at<=?').run(now);},60000);cleanup.unref();
   const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
   const random=()=>crypto.randomBytes(32).toString('base64url');
-  const admin=u=>u.auth_provider==='github'&&!!env.ADMIN_GITHUB_USERNAME&&u.username.toLowerCase()===env.ADMIN_GITHUB_USERNAME.toLowerCase();
+  // Keep the original single-admin setting; optionally add more GitHub logins.
+  const adminUsernames=new Set([env.ADMIN_GITHUB_USERNAME,env.ADMIN_GITHUB_USERNAMES]
+    .filter(Boolean).flatMap(value=>value.split(',')).map(value=>value.trim().toLowerCase()).filter(Boolean));
+  const admin=u=>u.auth_provider==='github'&&adminUsernames.has(u.username.trim().toLowerCase());
   const issue=u=>jwt.sign({sub:String(u.id),provider:u.auth_provider},secret,{algorithm:'HS256',expiresIn:'7d',issuer:'find-the-cat',audience:'find-the-cat-web'});
   function auth(req,res,next){try{const value=req.get('authorization')||'';assert(/^Bearer \S+$/.test(value)&&value.length<2048,401,'请先登录','UNAUTHORIZED');const payload=jwt.verify(value.slice(7),secret,{algorithms:['HS256'],issuer:'find-the-cat',audience:'find-the-cat-web'});assert(/^\d+$/.test(payload.sub),401,'登录已失效');req.user=service.user(Number(payload.sub));next();}catch(e){next(e instanceof AppError?e:new AppError(401,'登录已过期，请重新登录','UNAUTHORIZED'));}}
   const userView=u=>({...u,isAdmin:admin(u),isGuest:u.auth_provider==='guest'});
@@ -81,6 +86,10 @@ function makeApp(options={}){
   app.post('/api/game/complete',auth,rate('complete',30,60000,r=>r.user.id),(req,res)=>res.json(service.complete(req.user.id,req.body)));
   app.get('/api/levels/:id/top3',(req,res)=>res.json({rows:service.top(Number(req.params.id))}));
   app.get('/api/leaderboard',rate('rank',120),(req,res)=>res.json(service.leaderboard(Number(req.query.offset??0),Number(req.query.limit??50))));
+  function practiceAdmin(req,res,next){try{assert(admin(req.user),403,'仅 GitHub 管理员可操作');next();}catch(e){next(e);}}
+  app.post('/api/admin/practice/start',auth,practiceAdmin,rate('practice-start',30,60000,r=>r.user.id),(req,res)=>res.json(practiceService.start(req.user.id,req.body)));
+  app.post('/api/admin/practice/move',auth,practiceAdmin,rate('practice-move',240,60000,r=>r.user.id),(req,res)=>res.json(practiceService.move(req.user.id,req.body)));
+  app.post('/api/admin/practice/complete',auth,practiceAdmin,rate('practice-complete',30,60000,r=>r.user.id),(req,res)=>res.json(practiceService.complete(req.user.id,req.body)));
   function adminAuth(req,res,next){try{assert(admin(req.user),403,'仅 GitHub 管理员可操作');const supplied=req.get('x-admin-secret')||'',expected=env.ADMIN_SECRET||'';assert(expected.length>=24,503,'管理员密钥未配置或过短');const a=Buffer.from(hash(supplied)),b=Buffer.from(hash(expected));assert(supplied.length>0&&crypto.timingSafeEqual(a,b),403,'管理员密钥不正确');next();}catch(e){next(e);}}
   const workers=new Set();
   app.post('/api/admin/generate-levels',auth,rate('admin',10,3600000,r=>r.user.id),adminAuth,(req,res)=>{
@@ -97,7 +106,7 @@ function makeApp(options={}){
   app.get('/',(req,res)=>{res.set('Cache-Control','no-cache');res.sendFile(path.join(__dirname,'public/index.html'));});
   app.use(express.static(path.join(__dirname,'public'),{maxAge:'1h',index:false}));
   app.use((error,req,res,next)=>{if(res.headersSent)return next(error);let status=error.status||500;const message=error instanceof AppError?error.message:status===400?'请求 JSON 格式无效':status===413?'请求过大':'服务暂时不可用';if(status>=500)console.error('Server error:',error.message);res.status(status).json({error:message,code:error.code||'SERVER_ERROR'});});
-  app.locals.db=db;app.locals.service=service;app.locals.close=async()=>{clearInterval(cleanup);await Promise.all([...workers].map(w=>w.terminate()));if(!options.db)db.close();};
+  app.locals.db=db;app.locals.service=service;app.locals.practiceService=practiceService;app.locals.close=async()=>{clearInterval(cleanup);await Promise.all([...workers].map(w=>w.terminate()));if(!options.db)db.close();};
   return app;
 }
 if(require.main===module){const app=makeApp(),server=app.listen(Number(process.env.PORT)||3000,process.env.HOST||'127.0.0.1',()=>console.log(`Find the Cat: ${process.env.PUBLIC_URL||'http://localhost:3000'}`));const stop=()=>server.close(async()=>{await app.locals.close();process.exit(0);});process.once('SIGTERM',stop);process.once('SIGINT',stop);}

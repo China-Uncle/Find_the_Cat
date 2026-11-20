@@ -11,6 +11,7 @@ function harness() {
     constructor() { this.children = []; this.dataset = {}; this.attributes = {}; this.style = { setProperty() {} }; this.className = ''; }
     set innerHTML(value) { this.children = []; this.html = value; }
     get innerHTML() { return this.html; }
+    replaceChildren() { this.children = []; }
     append(node) { this.children.push(node); }
     setAttribute(key, value) { this.attributes[key] = value; }
     removeAttribute(key) { delete this.attributes[key]; }
@@ -26,7 +27,7 @@ function harness() {
   vm.createContext(sandbox);
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1].replace('boot().catch(showError);', '');
   vm.runInContext(script, sandbox);
-  const api = vm.runInContext('({UI, CAT, GameEngine, render, flagCellError, clearCellFeedback})', sandbox);
+  const api = vm.runInContext('({UI, CAT, GameEngine, PlatformAdapter, gameApi, loadLevel, render, flagCellError, clearCellFeedback})', sandbox);
   return { ...api, node, timers };
 }
 const snapshot = () => ({ level: { id: 1, size: 4, regions: Array.from({length: 16}, (_, i) => i % 4) }, marks: Array(16).fill(0), hearts: 3, elapsedMs: 0, status: 'playing' });
@@ -64,4 +65,57 @@ test('feedback resets safely on retry or level change and stays outside GameEngi
   flagCellError(7); clearCellFeedback();
   assert.equal(UI.cellErrors.size, 0); assert.equal(timers.size, 0);
   const engine = new GameEngine(); assert.ok(!('cellErrors' in engine.snapshot()));
+});
+
+
+test('normal and practice use different server endpoints and default is normal', () => {
+  const { UI, gameApi } = harness();
+  assert.equal(UI.mode, 'normal');
+  assert.equal(gameApi('move'), '/api/game/move');
+  UI.mode = 'practice';
+  assert.equal(gameApi('move'), '/api/admin/practice/move');
+  assert.equal(gameApi('start', 'normal'), '/api/game/start');
+});
+
+test('only admins can switch to practice; failed requests do not switch modes', async () => {
+  const { UI, GameEngine, loadLevel, PlatformAdapter } = harness();
+  UI.engine = new GameEngine();
+  let calls = 0;
+  PlatformAdapter.request = async () => {calls++; throw new Error('offline');};
+  await assert.rejects(loadLevel(false, {mode:'practice', levelId:2}), /仅管理员/);
+  assert.equal(calls, 0);
+  UI.account = {isAdmin:true};
+  await assert.rejects(loadLevel(false, {mode:'practice', levelId:2}), /offline/);
+  assert.equal(UI.mode, 'normal'); assert.equal(UI.loading, false);
+});
+
+test('switching practice preserves normal run and manual marks, with no levelId sent to scoring API', async () => {
+  const { UI, GameEngine, render, loadLevel, PlatformAdapter } = harness();
+  UI.account = {isAdmin:true}; UI.engine = new GameEngine(render);
+  const level = snapshot().level;
+  const run = {id:'normal-run',cats:[1],hearts:2,elapsedMs:5000,revision:1,status:'playing'};
+  UI.engine.load(level, run); UI.engine.applyMark(3,1);
+  const requests=[];
+  PlatformAdapter.request = async (url, options) => {
+    requests.push([url,options.body]);
+    return url.includes('/practice/') ? {level:{...level,id:5},run:{...run,id:'practice-run',hearts:3,cats:[],revision:0}} : {level,run};
+  };
+  await loadLevel(true, {mode:'practice',levelId:5});
+  assert.equal(UI.mode, 'practice'); assert.equal(UI.engine.level.id,5);
+  assert.equal(UI.engine.hearts,3); assert.equal(UI.engine.marks[3],0);
+  await loadLevel(false, {mode:'normal'});
+  assert.equal(UI.mode,'normal'); assert.equal(UI.engine.run.id,'normal-run');
+  assert.equal(UI.engine.hearts,2); assert.equal(UI.engine.marks[1],2); assert.equal(UI.engine.marks[3],1);
+  assert.equal(requests[0][0], '/api/admin/practice/start');
+  assert.deepEqual({...requests[0][1]}, {restart:true,levelId:5});
+  assert.equal(requests[1][0], '/api/game/start');
+  assert.deepEqual({...requests[1][1]}, {restart:false});
+});
+
+test('a pending move prevents mode switch and does not send any start request', async () => {
+  const { UI, GameEngine, loadLevel, PlatformAdapter } = harness();
+  UI.engine = new GameEngine(); UI.account={isAdmin:true}; UI.movePending=1;
+  let calls=0; PlatformAdapter.request=async()=>{calls++;};
+  assert.equal(await loadLevel(true,{mode:'practice',levelId:2}),false);
+  assert.equal(calls,0); assert.equal(UI.mode,'normal');
 });

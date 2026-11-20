@@ -24,6 +24,7 @@ npm start
 | `schema.sql` / `db.js` | SQLite 表、索引、WAL、事务和数据库连接 |
 | `level_generator.js` | 纯 MRV 求解器、逻辑回放、连通区域生成、指纹去重、增量扩容 |
 | `seed_levels.js` | CLI 和后台 Worker 共用的扩容入口 |
+| `practice_service.js` | 管理员隔离试关局次，不修改正式进度/榜单 |
 | `game_service.js` | 服务器权威局次、扣心、进度锁、幂等成绩、排行榜 |
 | `server.js` | Express 路由、GitHub OAuth、Bearer JWT、管理员鉴权 |
 | `public/index.html` | CSS、SVG、`GameEngine`、`PlatformAdapter`、触控坐标和 UI |
@@ -60,6 +61,27 @@ npm run seed -- 50
 使用同一个 `DATABASE_PATH`，无须重置进度或重启 Web 服务。CLI / 管理员 Worker 共用 SQLite 任务租约，禁止并行生成竞争。逐关事务提交；失败保留已生成前缀，下次从最新最大 ID 继续。总关数始终查询数据库，不固定为 200。单次数量 1–1000；当前末关通关后保留 `current_level=末关+1`，追加后刷新即可继续。
 
 管理员界面：“＋ 扩展题库” → 输入数量和管理员密钥 → 后台生成 → 轮询显示新增数量与总数。密钥不写入前端源码或浏览器持久化存储。
+
+## 管理员账号与双模式
+
+在**服务器已有** `/opt/find-the-cat/.env` 中设置：
+
+```dotenv
+ADMIN_GITHUB_USERNAME=China-Uncle
+# 可选：追加管理员，逗号分隔，原单账号配置继续生效
+ADMIN_GITHUB_USERNAMES=chinauncle
+```
+
+这里填 GitHub **登录用户名**（个人主页 `github.com/用户名` 中的部分），不是昵称、邮箱或仓库名。不加 `@` 或网址；匹配忽略大小写，但连字符不能省略，例如 `China-Uncle` 与 `chinauncle` 是两个不同账号。两个配置合并为管理员名单，空值不授权。示例 `China-Uncle` 请按实际登录账号替换。修改后执行 `systemctl restart find-the-cat`，刷新页面并使用该 GitHub 账号登录。后端每次请求都校验数据库账号与服务器配置，不相信客户端 `isAdmin`。未匹配的用户和游客没有管理权限。**不要重建 `.env`、不要修改已有 OAuth/JWT 密钥或 3002 端口，也不需要改 OAuth 回调地址。**
+
+管理员登录后有两个独立入口：
+
+- **模式：正常 / 模式：试关**：默认正常模式。正常闯关仍按顺序解锁、正常扣心和计榜。点模式按钮输入任意已生成关卡号进入试关；试关内的关卡列表全部可选，允许重复玩。试关仍有三心、判错、重开和用时，但不写正式成绩、不解锁正式关卡，也不修改题库答案。
+- **＋ 扩展题库**：仍需要额外的 `ADMIN_SECRET`，仅该功能会向题库追加关卡。已有有效密钥不必重置；不要把密钥提交到仓库或发送给前端持久化保存。
+
+两种模式分别使用 `runs/run_moves` 和 `practice_runs/practice_moves`，服务端接口隔离；试关局次不能提交到正式计分接口，反之亦然。返回正常模式会恢复服务端的正式局次，当前页面内的手动叉号也会恢复。正式计时按墙钟运行，切到试关不会暂停正式计时。刷新页面默认回到正常模式。旧题库和玩家进度不迁移、不清空；首次启动仅增建试关用表。
+
+试关不是“改当前关号”或编辑题库。它不需要输入扩容密钥，但所有试关接口都必须具有有效 JWT 和服务端确认的 GitHub 管理员身份。管理员本来就能读题库，管理员试关不应被理解成对管理员的严格反作弊隔离。
 
 ## GitHub OAuth 与生产部署
 
@@ -109,6 +131,9 @@ OAuth 使用单次 state、PKCE、浏览器随机挑战绑定和短时单次交�
 | POST | `/api/game/complete` | `{runId,levelId,cats}`，cats 是行优先格子索引数组 |
 | GET | `/api/levels/:id/top3` | 单关最快三名 |
 | GET | `/api/leaderboard?offset=0&limit=50` | 通关数降序、总耗时升序 |
+| POST | `/api/admin/practice/start` | 管理员试关：`{levelId,restart?:boolean}`，不改正式局次 |
+| POST | `/api/admin/practice/move` | 管理员试关放猫/移猫，字段同正式 move |
+| POST | `/api/admin/practice/complete` | 管理员试关结算，不写排行榜或正式进度 |
 | POST | `/api/admin/generate-levels` | `{count}`；同时要求管理员 JWT 和 `X-Admin-Secret` |
 | GET | `/api/admin/generation-jobs/:id` | 管理员查询任务进度 |
 

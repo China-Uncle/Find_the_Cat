@@ -88,3 +88,26 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_generation
   ON generation_jobs((1)) WHERE status IN ('queued','running');
 PRAGMA user_version = 1;
+
+-- Practice is a separate namespace: one retained run per user, never official progress.
+CREATE TABLE IF NOT EXISTS practice_runs (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  level_id INTEGER NOT NULL REFERENCES levels(id),
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  expires_at INTEGER NOT NULL,
+  hearts INTEGER NOT NULL DEFAULT 3 CHECK(hearts BETWEEN 0 AND 3),
+  cats TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(cats)),
+  revision INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'playing' CHECK(status IN ('playing','ready','failed','completed'))
+);
+CREATE TABLE IF NOT EXISTS practice_moves (
+  run_id TEXT NOT NULL REFERENCES practice_runs(id) ON DELETE CASCADE,
+  request_id TEXT NOT NULL,
+  cell INTEGER NOT NULL,
+  operation TEXT NOT NULL CHECK(operation IN ('place','remove')),
+  result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+  PRIMARY KEY(run_id, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_practice_runs_expires ON practice_runs(expires_at);
