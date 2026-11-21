@@ -1,5 +1,6 @@
 'use strict';
-require('dotenv').config();
+// Importing the app for isolated tests must not read a local environment file.
+if(require.main===module)require('dotenv').config();
 const express=require('express');
 const helmet=require('helmet');
 const jwt=require('jsonwebtoken');
@@ -9,6 +10,7 @@ const {Worker}=require('node:worker_threads');
 const {openDatabase,resolveDatabase,transaction}=require('./db');
 const {GameService,AppError,assert}=require('./game_service');
 const {PracticeService}=require('./practice_service');
+const {PasswordService,normalizeUsername}=require('./password_service');
 const {createGenerationJob}=require('./level_generator');
 function makeApp(options={}){
   const env={...process.env,...options.env},production=env.NODE_ENV==='production';
@@ -22,6 +24,7 @@ function makeApp(options={}){
   const callbackUrl=base+callbackPath,allowGuest=!production&&env.ALLOW_GUEST_LOGIN==='true';
   const db=options.db||openDatabase(env.DATABASE_PATH),service=new GameService(db,{runTtlHours:Number(env.RUN_TTL_HOURS)||24});
   const practiceService=new PracticeService(db,{runTtlHours:Number(env.RUN_TTL_HOURS)||24});
+  const passwordService=new PasswordService(db,service);
   const app=express();app.disable('x-powered-by');
   const hops=Number(env.TRUST_PROXY_HOPS||0);if(!Number.isInteger(hops)||hops<0||hops>5)throw new Error('TRUST_PROXY_HOPS 必须为 0–5');app.set('trust proxy',hops);
   app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'unsafe-inline'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','https://avatars.githubusercontent.com'],connectSrc:["'self'"],fontSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],...(production?{}:{upgradeInsecureRequests:null})}},hsts:production?{maxAge:31536000,includeSubDomains:false}:false,referrerPolicy:{policy:'no-referrer'}}));
@@ -47,7 +50,21 @@ function makeApp(options={}){
     return service.user(db.prepare('SELECT id FROM users WHERE auth_provider=? AND open_id=?').get(provider,String(openId)).id);
   }
   app.get('/api/health',(req,res)=>res.json({ok:true,totalLevels:service.total()}));
-  app.get('/api/config',(req,res)=>res.json({githubLogin:!!(env.GITHUB_CLIENT_ID&&env.GITHUB_CLIENT_SECRET),guestLogin:allowGuest,totalLevels:service.total()}));
+  app.get('/api/config',(req,res)=>res.json({passwordLogin:true,githubLogin:!!(env.GITHUB_CLIENT_ID&&env.GITHUB_CLIENT_SECRET),guestLogin:allowGuest,totalLevels:service.total()}));
+  // Independent IP and normalized-account budgets: rotating usernames/IPs cannot
+  // bypass both. Hashing is async and bounded globally to avoid a scrypt work queue.
+  let activePasswords=0;
+  const passwordCapacity=(action,status)=>async(req,res,next)=>{
+    if(activePasswords>=4){res.set('Retry-After','1');return next(new AppError(429,'操作太快，请稍后再试'));}
+    activePasswords++;
+    try{const u=await passwordService[action](req.body);
+      res.status(status).json({['access'+'Token']:issue(u),user:userView(u)});
+    }catch(error){next(error);}finally{activePasswords--;}
+  };
+  const passwordIp=rate('password-ip',30,900000,r=>String(r.ip||'unknown'));
+  app.post('/api/auth/register',passwordIp,rate('password-register',5,3600000,r=>String(r.ip||'unknown')),passwordCapacity('register',201));
+  app.post('/api/auth/login',passwordIp,
+    rate('password-account',10,900000,r=>hash(normalizeUsername(r.body.username)||String(r.ip||'unknown'))),passwordCapacity('login',200));
   app.post('/api/auth/guest',rate('guest',12,900000),(req,res)=>{assert(allowGuest,403,'游客登录仅限本地测试');const name=typeof req.body.username==='string'?req.body.username.trim().slice(0,24):'测试猫友',guestId=req.body.guestId;assert(name.length>0,400,'请输入昵称');assert(typeof guestId==='string'&&/^[a-f0-9-]{36}$/i.test(guestId),400,'游客设备编号无效');const u=upsert('guest',guestId,name);res.json({['access'+'Token']:issue(u),user:userView(u)});});
   app.get('/api/auth/github/start',rate('oauth',20,900000),(req,res)=>{
     assert(env.GITHUB_CLIENT_ID&&env.GITHUB_CLIENT_SECRET,503,'尚未配置 GitHub OAuth');

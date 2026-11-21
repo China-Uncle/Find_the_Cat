@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 -- SQLite timestamps are integer milliseconds, not client-provided times.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
-  auth_provider TEXT NOT NULL CHECK(auth_provider IN ('github','guest','wechat')),
+  auth_provider TEXT NOT NULL CHECK(auth_provider IN ('github','guest','wechat','password')),
   open_id TEXT NOT NULL,
   username TEXT NOT NULL,
   avatar_url TEXT NOT NULL DEFAULT '',
@@ -87,7 +87,6 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_generation
   ON generation_jobs((1)) WHERE status IN ('queued','running');
-PRAGMA user_version = 1;
 
 -- Practice is a separate namespace: one retained run per user, never official progress.
 CREATE TABLE IF NOT EXISTS practice_runs (
@@ -111,3 +110,30 @@ CREATE TABLE IF NOT EXISTS practice_moves (
   PRIMARY KEY(run_id, request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_practice_runs_expires ON practice_runs(expires_at);
+
+-- Password secrets are separate from public identity/progress views.
+CREATE TABLE IF NOT EXISTS password_credentials (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  username TEXT NOT NULL UNIQUE CHECK(length(username) BETWEEN 3 AND 24
+    AND username NOT GLOB '*[^a-z0-9_]*'),
+  algorithm TEXT NOT NULL CHECK(algorithm = 'scrypt'),
+  cost INTEGER NOT NULL CHECK(cost = 32768),
+  block_size INTEGER NOT NULL CHECK(block_size = 8),
+  parallelism INTEGER NOT NULL CHECK(parallelism = 1),
+  key_length INTEGER NOT NULL CHECK(key_length = 64),
+  salt TEXT NOT NULL CHECK(length(salt) = 32 AND salt NOT GLOB '*[^a-f0-9]*'),
+  password_hash TEXT NOT NULL CHECK(length(password_hash) = 128 AND password_hash NOT GLOB '*[^a-f0-9]*')
+);
+-- Do not allow attaching password credentials to an OAuth or guest identity.
+CREATE TRIGGER IF NOT EXISTS password_identity_insert
+BEFORE INSERT ON password_credentials
+WHEN NOT EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND auth_provider='password')
+BEGIN SELECT RAISE(ABORT, 'password identity required'); END;
+CREATE TRIGGER IF NOT EXISTS password_identity_update
+BEFORE UPDATE OF user_id ON password_credentials
+WHEN NOT EXISTS (SELECT 1 FROM users WHERE id=NEW.user_id AND auth_provider='password')
+BEGIN SELECT RAISE(ABORT, 'password identity required'); END;
+CREATE TRIGGER IF NOT EXISTS password_provider_update
+BEFORE UPDATE OF auth_provider ON users
+WHEN NEW.auth_provider!='password' AND EXISTS (SELECT 1 FROM password_credentials WHERE user_id=OLD.id)
+BEGIN SELECT RAISE(ABORT, 'password identity required'); END;
