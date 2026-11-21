@@ -7,6 +7,8 @@
 /* Size the board from its actual remaining space, including short landscape screens. */
 .board-frame{min-height:0;min-width:0;max-width:100%}.board{--tile:var(--fit-tile,24px)}
 .topbar>div:nth-child(2){min-width:0}.nav{flex-wrap:wrap}.row>*{min-width:0;overflow-wrap:anywhere}
+.leader-row{grid-template-columns:27px 28px minmax(0,1fr) fit-content(40%)}
+.leader-provider{display:inline-block;white-space:nowrap;padding:1px 5px;border-radius:999px;background:#ebe3d7;color:#594b40;font-size:10px;line-height:1.4}
 .cell.pending{opacity:.6}.cell:disabled{cursor:wait}.subrow{flex:none}.play{overflow:hidden}
 @media(max-width:600px){.topbar{grid-template-columns:auto minmax(0,1fr)}.topbar>div:nth-child(2){grid-column:1/-1;grid-row:1}.nav{justify-content:flex-end}.brand{grid-row:2}}
 @media(max-height:430px){.app{gap:4px;padding-top:4px;padding-bottom:4px}.topbar{min-height:30px}.topbar>div:nth-child(2){grid-column:auto;grid-row:auto}.topbar{grid-template-columns:auto 1fr auto}.brand,.nav{grid-row:auto}.nav{grid-column:auto}.title{font-size:16px}.heart{width:12px;height:12px}.legend{padding:3px}.legend-copy small{display:none}.status{min-height:30px;padding:3px 7px}.mini{grid-template-columns:repeat(3,7px);grid-template-rows:repeat(3,7px)}.play{gap:3px}}
@@ -623,7 +625,22 @@ function showPracticeWin(result) {
   $('practiceChoose').onclick=showMode;
 }
 
-async function showRank(){try{const d=await PlatformAdapter.request('/api/leaderboard?limit=100');const medals=['🥇','🥈','🥉'];const rows=d.rows.map(u=>`<div class="row leader-row"><span class="medal">${medals[u.rank-1]||u.rank}</span>${u.avatarUrl?`<img class="avatar" src="${esc(u.avatarUrl)}" alt="">`:'🐱'}<span>${esc(u.username)}</span><span><b>${u.cleared}</b> 关 · ${formatTime(u.totalMs)}</span></div>`).join('');modal('全服总榜',`<div class="rows">${rows||'<div class="empty">还没有公开成绩，来成为第一个上榜的猫友吧。</div>'}</div>`)}catch(e){showError(e)}}
+function leaderboardProviderLabel(provider){
+  switch(provider){
+    case 'github': return 'GitHub';
+    case 'password': return '账号密码';
+    case 'wechat': return '微信';
+    default: return '未知方式';
+  }
+}
+async function showRank(){
+  try{
+    const d=await PlatformAdapter.request('/api/leaderboard?limit=100');
+    const medals=['🥇','🥈','🥉'];
+    const rows=d.rows.map(u=>`<div class="row leader-row"><span class="medal">${medals[u.rank-1]||u.rank}</span>${u.avatarUrl?`<img class="avatar" src="${esc(u.avatarUrl)}" alt="">`:'🐱'}<span><span class="leader-name">${esc(u.username)}</span> <span class="leader-provider">${leaderboardProviderLabel(u.authProvider)}</span></span><span><b>${u.cleared}</b> 关 · ${formatTime(u.totalMs)}</span></div>`).join('');
+    modal('全服总榜',`<div class="rows">${rows||'<div class="empty">还没有公开成绩，来成为第一个上榜的猫友吧。</div>'}</div>`);
+  }catch(e){showError(e)}
+}
 function showAdmin(){modal('扩展题库',`<p>追加关卡会在后台生成并自动去重。单次最多 1000 关；任务完成后关卡列表自动更新。</p><label class="field">追加数量<input id="adminCount" type="number" min="1" max="1000" value="50"></label><label class="field">管理员密钥<input id="adminSecret" type="password" autocomplete="current-password"></label><button class="primary" id="generate">开始生成</button><div id="jobProgress"></div>`);$('generate').onclick=startGeneration}
 async function startGeneration(){const count=Number($('adminCount').value),secret=$('adminSecret').value;if(!Number.isInteger(count)||count<1||count>1000)return toast('请输入 1–1000 的关卡数');$('generate').disabled=true;try{const {jobId}=await PlatformAdapter.request('/api/admin/generate-levels',{method:'POST',body:{count},headers:{'X-Admin-Secret':secret}});const poll=async()=>{try{const d=await PlatformAdapter.request('/api/admin/generation-jobs/'+encodeURIComponent(jobId));const j=d.job;$('jobProgress').textContent=`${j.created_count}/${j.requested} · 当前共 ${d.totalLevels} 关`;if(j.status==='done'){toast(`生成完成：第 ${j.start_level}–${j.end_level} 关`);$('generate').disabled=false;return}if(j.status==='failed'){toast(j.error||'生成失败');$('generate').disabled=false;return}setTimeout(poll,1000)}catch(e){toast(e.message);$('generate').disabled=false}};poll()}catch(e){$('generate').disabled=false;toast(e.message)}}
 function guestId(){let id=PlatformAdapter.getStorage('guest-id');if(!id){id=crypto.randomUUID();PlatformAdapter.setStorage('guest-id',id)}return id}
